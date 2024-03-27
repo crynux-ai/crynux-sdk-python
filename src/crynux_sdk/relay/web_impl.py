@@ -1,10 +1,12 @@
 import json
 import os
+import ssl
 from contextlib import ExitStack
 from typing import BinaryIO, List
 
+import certifi
 from aiohttp import (ClientConnectionError, ClientResponse, ClientSession,
-                     ClientTimeout)
+                     ClientTimeout, TCPConnector)
 from anyio import wrap_file
 
 from crynux_sdk.models.relay import RelayTask
@@ -38,7 +40,12 @@ async def _process_resp(resp: ClientResponse, method: str):
 class WebRelay(Relay):
     def __init__(self, base_url: str, privkey: str, timeout: float = 30) -> None:
         super().__init__()
-        self.client = ClientSession(base_url=base_url, timeout=ClientTimeout(timeout))
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        self.client = ClientSession(
+            base_url=base_url,
+            timeout=ClientTimeout(timeout),
+            connector=TCPConnector(ssl=ssl_context),
+        )
         self.signer = Signer(privkey=privkey)
 
     async def create_task(self, task_id: int, task_args: str) -> RelayTask:
