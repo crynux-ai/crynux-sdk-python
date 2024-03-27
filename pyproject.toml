@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crynux-sdk"
+authors = [{ name = "iwehf", email = "henry.lee@crynux.ai" }]
+description = "Python SDK for crynux network"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+classifiers = ["Programming Language :: Python :: 3"]
+dependencies = [
+    "web3~=6.8.0",
+    "anyio~=3.7.1",
+    "pydantic~=2.2.1",
+    "tenacity~=8.2.3",
+]
+version = "0.0.1"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["crynux_sdk*"]
+
+[tool.setuptools.package-data]
+"crynux_sdk.contracts.abi" = ["*.json"]
+
+[project.optional-dependencies]
+test = ["pytest~=7.4.0", "web3[tester]"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
