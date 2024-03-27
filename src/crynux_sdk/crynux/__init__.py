@@ -37,6 +37,31 @@ _logger = logging.getLogger(__name__)
 
 
 class Crynux(object):
+    """
+    The main entry point of crynux sdk.
+    
+    You should call the `init` method before you calling other method of this class.
+    And you should call the `close` method after you don't need use of it.
+
+    For example:
+    ```
+    crynux = Crynux(privkey=privkey)
+    await crynux.init()
+    try:
+        await crynux.generate_images(...)
+    finally:
+        await crynux.close()
+    ```
+
+    This class is also a async context manager. So you can automatically close it by `async with` syntax.
+    For example:
+    ```
+    crynux = Crynux(privkey=privkey)
+    await crynux.init()
+    async with crynux:
+        await crynux.generate_images(...)
+    ```
+    """
     contracts: Contracts
     relay: Relay
 
@@ -59,11 +84,33 @@ class Crynux(object):
         gas_price: Optional[int] = None,
         max_fee_per_gas: Optional[int] = None,
         max_priority_fee_per_gas: Optional[int] = None,
-        contracts: Optional[Contracts] = None,
-        relay: Optional[Relay] = None,
         contracts_timeout: float = 30,
         relay_timeout: float = 30,
+        contracts: Optional[Contracts] = None,
+        relay: Optional[Relay] = None,
     ) -> None:
+        """
+        privkey: Private key. Need for interacting with the blockchain.
+        chain_provider_path: Chain provider path. Can be a json rpc path (starts with http) or a websocket path (starts with ws)
+                             Default to None, means using the default provider path.
+        relay_url: The relay server url. Default to None, means using the default provider path.
+        token_contract_address: Token contract address. Default to None, means using the default token contract address.
+        node_contract_address: Node contract address. Default to None, means using the default node contract address.
+        task_contract_address: Task contract address. Default to None, means using the default task contract address.
+        qos_contract_address: qos contract address. Default to None, means using the default qos contract address.
+        task_queue_contract_address: Task queue contract address. Default to None, means using the default task queue contract address.
+        netstats_contract_address: Netstats contract address. Default to None, means using the default netstats contract address.
+        chain_id: Chain id of crynux blockchain. Default to None, means using the default chain id.
+        gas: Gas limit of transaction. Default to None, means using the default gas limit.
+        gas_price: Gas price of transaction. Default to None, means using the default gas price.
+        max_fee_per_gas: Max fee per gas of transaction. Default to None, means using the default max fee per gas.
+        max_priority_fee_per_gas: Max priority fee per gas of transaction. Default to None, means using the default max priority fee per gas.
+        contracts_timeout: Timeout for interacting with the blockchain in seconds. Default to 30 seconds.
+        relay_timeout: Timeout for interacting with the relay in seconds. Default to 30 seconds.
+
+        contracts: crynux_sdk.contracts.Contracts instance. Used for testing.
+        relay: crynux_sdk.relay.Relay instance. Used for testing.
+        """
         if contracts is not None:
             self.contracts = contracts
         else:
@@ -154,6 +201,14 @@ class Crynux(object):
         await self.close()
 
     async def deposit(self, address: str, eth: int, cnx: int, unit: str = "ether"):
+        """
+        deposit tokens to the address
+
+        address: Address which deposit tokens to
+        eth: Eth tokens need to deposit, 0 means not to deposit eth
+        cnx: Cnx tokens need to deposit, 0 means not to deposit cnx
+        unit: The unit for eth and cnx tokens, default to "ether"
+        """
         assert self._initialized, "Crynux sdk hasn't been initialized"
         assert not self._closed, "Crynux sdk has been closed"
 
@@ -178,6 +233,29 @@ class Crynux(object):
         wait_interval: int = 1,
         auto_cancel: bool = True,
     ):
+        """
+        generate images by crynux network
+
+        dst_dir: Where to store the generated images, should be a string or a pathlib.Path.
+                 The dst_dir should be existed.
+                 Generated images will be save in path dst_dir/0.png, dst_dir/1.png and so on.
+        task_fee: The cnx tokens you paid for image generation, should be a int.
+                  You account must have enough cnx tokens before you call this method, 
+                  or it will failed.
+        prompt: The prompt for image generation.
+        vram_limit: The GPU VRAM limit for image generation. Crynux network will select nodes 
+                    with vram larger than vram_limit to generate image for you.
+                    If vram_limit is None, then the sdk will predict it by the base model.
+        base_model: The base model used for image generation, default to runwayml/stable-diffusion-v1-5.
+        negative_prompt: The negative prompt for image generation.
+        task_optional_args: Optional arguments for image generation. See crynux_sdk.models.sd_args.TaskOptionalArgs for details.
+        task_fee_unit: The unit for task fee, default to "ether".
+        max_retries: Max retry counts when face network issues, default to 5 times.
+        max_timeout_retries: Max retry counts when cannot result images after timeout, default to 3 times.
+        timeout: The timeout for image generation in seconds. Default to None, means no timeout.
+        wait_interval: The interval in seconds for checking crynux contracts events. Default to 1 second.
+        auto_cancel: Whether to cancel the timeout image generation task automatically. Default to True.
+        """
         assert self._initialized, "Crynux sdk hasn't been initialized"
         assert not self._closed, "Crynux sdk has been closed"
 
