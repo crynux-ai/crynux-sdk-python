@@ -32,7 +32,7 @@ pip install .
 First, initialize the crynux instance
 
 ```python
-import Crynux from crynux_sdk
+from crynux_sdk import Crynux
 
 async def main():
     crynux = Crynux(privkey="0x")
@@ -42,7 +42,7 @@ async def main():
 You should close the crynux instance when you don't need it any more.
 
 ```python
-import Crynux from crynux_sdk
+from crynux_sdk import Crynux
 
 async def main():
     crynux = Crynux(privkey="0x")
@@ -56,7 +56,7 @@ async def main():
 Or you can use it as a async context manager.
 
 ```python
-import Crynux from crynux_sdk
+from crynux_sdk import Crynux
 
 async def main():
     crynux = Crynux(privkey="0x")
@@ -68,13 +68,13 @@ async def main():
 ## deposit tokens
 
 ```python
-import Crynux from crynux_sdk
+from crynux_sdk import Crynux
 
 async def main():
     crynux = Crynux(privkey="0x")
     await crynux.init()
     async with crynux:
-        await crynux.deposit_tokens(
+        await crynux.deposit(
             "0x", 10, 10, "ether"
         )
 ```
@@ -89,7 +89,7 @@ Arguments for crynux.deposit_tokens:
 ## generate images
 
 ```python
-import Crynux from crynux_sdk
+from crynux_sdk import Crynux
 
 async def main():
     crynux = Crynux(privkey="0x")
