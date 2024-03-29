@@ -137,3 +137,4 @@ Arguments for crynux.generate_images:
 * wait_interval: The interval in seconds for checking crynux contracts events. Default to 1 second.
 * auto_cancel: Whether to cancel the timeout image generation task automatically. Default to True.
 
+* returns: result image paths

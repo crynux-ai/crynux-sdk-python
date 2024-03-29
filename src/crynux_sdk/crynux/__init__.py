@@ -248,6 +248,8 @@ class Crynux(object):
         timeout: The timeout for image generation in seconds. Default to None, means no timeout.
         wait_interval: The interval in seconds for checking crynux contracts events. Default to 1 second.
         auto_cancel: Whether to cancel the timeout image generation task automatically. Default to True.
+
+        returns: result image paths
         """
         assert self._initialized, "Crynux sdk hasn't been initialized"
         assert not self._closed, "Crynux sdk has been closed"
