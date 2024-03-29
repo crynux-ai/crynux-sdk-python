@@ -2,26 +2,18 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 from anyio import fail_after
-from tenacity import (
-    AsyncRetrying,
-    RetryCallState,
-    retry_if_exception_cause_type,
-    retry_if_exception_type,
-    retry_if_not_exception_type,
-    stop_after_attempt,
-    wait_fixed,
-)
+from tenacity import (AsyncRetrying, RetryCallState,
+                      retry_if_exception_cause_type, retry_if_exception_type,
+                      retry_if_not_exception_type, stop_after_attempt,
+                      wait_fixed)
 from web3 import Web3
 
-from crynux_sdk.config import (
-    get_default_contract_config,
-    get_default_provider_path,
-    get_default_relay_url,
-    get_default_tx_option,
-)
+from crynux_sdk.config import (get_default_contract_config,
+                               get_default_provider_path,
+                               get_default_relay_url, get_default_tx_option)
 from crynux_sdk.contracts import Contracts, TxRevertedError
 from crynux_sdk.models import sd_args
 from crynux_sdk.models.contracts import TaskType
@@ -39,7 +31,7 @@ _logger = logging.getLogger(__name__)
 class Crynux(object):
     """
     The main entry point of crynux sdk.
-    
+
     You should call the `init` method before you calling other method of this class.
     And you should call the `close` method after you don't need use of it.
 
@@ -62,6 +54,7 @@ class Crynux(object):
         await crynux.generate_images(...)
     ```
     """
+
     contracts: Contracts
     relay: Relay
 
@@ -232,7 +225,7 @@ class Crynux(object):
         timeout: Optional[float] = None,
         wait_interval: int = 1,
         auto_cancel: bool = True,
-    ):
+    ) -> List[pathlib.Path]:
         """
         generate images by crynux network
 
@@ -240,10 +233,10 @@ class Crynux(object):
                  The dst_dir should be existed.
                  Generated images will be save in path dst_dir/0.png, dst_dir/1.png and so on.
         task_fee: The cnx tokens you paid for image generation, should be a int.
-                  You account must have enough cnx tokens before you call this method, 
+                  You account must have enough cnx tokens before you call this method,
                   or it will failed.
         prompt: The prompt for image generation.
-        vram_limit: The GPU VRAM limit for image generation. Crynux network will select nodes 
+        vram_limit: The GPU VRAM limit for image generation. Crynux network will select nodes
                     with vram larger than vram_limit to generate image for you.
                     If vram_limit is None, then the sdk will predict it by the base model.
         base_model: The base model used for image generation, default to runwayml/stable-diffusion-v1-5.
@@ -255,6 +248,8 @@ class Crynux(object):
         timeout: The timeout for image generation in seconds. Default to None, means no timeout.
         wait_interval: The interval in seconds for checking crynux contracts events. Default to 1 second.
         auto_cancel: Whether to cancel the timeout image generation task automatically. Default to True.
+
+        returns: result image paths
         """
         assert self._initialized, "Crynux sdk hasn't been initialized"
         assert not self._closed, "Crynux sdk has been closed"
@@ -305,18 +300,21 @@ class Crynux(object):
                                 interval=wait_interval,
                             )
 
+                    res: List[pathlib.Path] = []
                     async for attemp in AsyncRetrying(
                         wait=wait_fixed(2),
                         stop=stop_after_attempt(max_retries),
                         reraise=True,
                     ):
                         with attemp:
-                            await self.task.get_task_result(
+                            res = await self.task.get_task_result(
                                 task_id=task_id,
                                 task_type=TaskType.SD,
                                 count=cap,
                                 dst_dir=dst_dir,
                             )
+                    return res
+
             except TimeoutError as timeout_exc:
                 if auto_cancel and task_id > 0 and task_created:
                     if not task_success:
@@ -324,6 +322,7 @@ class Crynux(object):
                             f"task {task_id} is not successful after {timeout} seconds"
                         )
                         _logger.info(f"try to cancel task {task_id}")
+                        # try cancel the task
                         try:
                             async for attemp in AsyncRetrying(
                                 wait=wait_fixed(2),
@@ -348,6 +347,7 @@ class Crynux(object):
                             raise TaskCancelError(
                                 task_id=task_id, reason=str(e)
                             ) from timeout_exc
+                        raise timeout_exc
                     else:
                         e = TaskGetResultTimeout(task_id=task_id)
                         _logger.error(str(e))
@@ -362,11 +362,14 @@ class Crynux(object):
                     msg = f"image generation failed due to {exc.reason}, "
                 else:
                     msg = f"image generation doesn't complete in {timeout} seconds, "
-                
+
                 retry_times = max_timeout_retries - retry_state.attempt_number
-                msg += f"retry the image generation, remaining retring times {retry_times}"
+                msg += (
+                    f"retry the image generation, remaining retring times {retry_times}"
+                )
                 _logger.error(msg)
 
+        res: List[pathlib.Path] = []
         async for attemp in AsyncRetrying(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_timeout_retries),
@@ -376,4 +379,5 @@ class Crynux(object):
             reraise=True,
         ):
             with attemp:
-                await _run_task()
+                res = await _run_task()
+        return res

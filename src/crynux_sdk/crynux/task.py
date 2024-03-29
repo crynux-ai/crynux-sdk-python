@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from anyio import create_task_group, sleep
 from tenacity import (AsyncRetrying, retry_if_exception,
@@ -255,7 +255,7 @@ class Task(object):
         task_type: TaskType,
         count: int,
         dst_dir: Union[str, pathlib.Path],
-    ):
+    ) -> List[pathlib.Path]:
         ext = "png" if task_type == TaskType.SD else "json"
 
         async def _download_result(task_id: int, index: int, file: pathlib.Path):
@@ -267,7 +267,11 @@ class Task(object):
         if not dst_dir.exists():
             raise ValueError(f"Result dir {dst_dir} does not exist")
 
-
+        res = []
         async with create_task_group() as tg:
             for i in range(count):
-                tg.start_soon(_download_result, task_id, i, dst_dir / f"{i}.{ext}")
+                file = dst_dir / f"{i}.{ext}"
+                tg.start_soon(_download_result, task_id, i, file)
+                res.append(file)
+        return res
+
