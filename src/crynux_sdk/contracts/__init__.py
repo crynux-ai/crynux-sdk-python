@@ -1,7 +1,7 @@
 import logging
 import ssl
 from enum import IntEnum
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import certifi
 from aiohttp import ClientSession, ClientTimeout, TCPConnector
@@ -220,6 +220,38 @@ class Contracts(object):
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return await self.close()
+
+    def get_contract(self, name: str):
+        if name == "token":
+            return self.token_contract
+        elif name == "node":
+            return self.node_contract
+        elif name == "task":
+            return self.task_contract
+        elif name == "qos":
+            return self.qos_contract
+        elif name == "task_queue":
+            return self.task_queue_contract
+        elif name == "netstats":
+            return self.netstats_contract
+        else:
+            raise ValueError(f"unknown contract name {name}")
+    
+    async def get_events(
+        self,
+        contract_name: str,
+        event_name: str,
+        filter_args: Optional[Dict[str, Any]] = None,
+        from_block: Optional[int] = None,
+        to_block: Optional[int] = None,
+    ):
+        contract = self.get_contract(contract_name)
+        return await contract.get_events(
+            event_name=event_name,
+            filter_args=filter_args,
+            from_block=from_block,
+            to_block=to_block
+        )
 
     @property
     def w3(self):

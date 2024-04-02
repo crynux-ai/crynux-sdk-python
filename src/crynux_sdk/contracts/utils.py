@@ -1,6 +1,7 @@
 import json
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Callable, Optional, TypeVar, cast
+from typing import (TYPE_CHECKING, Any, Callable, Dict, List, Optional,
+                    TypeVar, cast)
 
 import importlib_resources as impresources
 from anyio import Lock, get_cancelled_exc_class
@@ -9,8 +10,9 @@ from eth_typing import ChecksumAddress
 from hexbytes import HexBytes
 from typing_extensions import ParamSpec
 from web3 import AsyncWeb3, WebsocketProviderV2
-from web3.contract.async_contract import AsyncContractFunction, AsyncContract
-from web3.types import TxParams
+from web3.contract.async_contract import (AsyncContract, AsyncContractEvent,
+                                          AsyncContractFunction)
+from web3.types import EventData, TxParams
 
 from .exceptions import TxRevertedError
 
@@ -31,8 +33,17 @@ Contract_Func = Callable[[], AsyncContract]
 T = TypeVar("T")
 P = ParamSpec("P")
 
+
 class TxWaiter(object):
-    def __init__(self, w3: AsyncWeb3, method: str, tx_hash: HexBytes, timeout: float = 120, interval: float = 0.1, lock: Optional[Lock] = None):
+    def __init__(
+        self,
+        w3: AsyncWeb3,
+        method: str,
+        tx_hash: HexBytes,
+        timeout: float = 120,
+        interval: float = 0.1,
+        lock: Optional[Lock] = None,
+    ):
         self.w3 = w3
         self.method = method
         self.tx_hash = tx_hash
@@ -47,7 +58,6 @@ class TxWaiter(object):
                 yield
         else:
             yield
-
 
     async def wait(self):
         async with self._with_lock():
@@ -144,9 +154,7 @@ class ContractWrapperBase(object):
         address = receipt["contractAddress"]
         assert address is not None, "Deployed contract address is None"
         self._address = address
-        self._contract = self.w3.eth.contract(
-            address=address, abi=self.abi
-        )
+        self._contract = self.w3.eth.contract(address=address, abi=self.abi)
 
     @property
     def address(self) -> ChecksumAddress:
@@ -181,7 +189,14 @@ class ContractWrapperBase(object):
             tx_func: AsyncContractFunction = getattr(self.contract.functions, method)
             tx_hash: HexBytes = await tx_func(*args, **kwargs).transact(opt)
 
-        return TxWaiter(w3=self.w3, method=method, tx_hash=tx_hash, timeout=timeout, interval=interval, lock=self._call_lock)
+        return TxWaiter(
+            w3=self.w3,
+            method=method,
+            tx_hash=tx_hash,
+            timeout=timeout,
+            interval=interval,
+            lock=self._call_lock,
+        )
 
     async def _function_call(self, method: str, *args, **kwargs):
         opt: TxParams = {}
@@ -191,3 +206,17 @@ class ContractWrapperBase(object):
         tx_func: AsyncContractFunction = getattr(self.contract.functions, method)
         async with self.with_call_lock():
             return await tx_func(*args, **kwargs).call(opt)
+
+    async def get_events(
+        self,
+        event_name: str,
+        filter_args: Optional[Dict[str, Any]] = None,
+        from_block: Optional[int] = None,
+        to_block: Optional[int] = None,
+    ) -> List[EventData]:
+        event = self.contract.events[event_name]
+        event = cast(AsyncContractEvent, event)
+        events = await event.get_logs(
+            argument_filters=filter_args, fromBlock=from_block, toBlock=to_block
+        )
+        return list(events)
