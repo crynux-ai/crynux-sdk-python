@@ -165,7 +165,8 @@ class Task(object):
         self, task_id: int, from_block: int, interval: int
     ) -> TaskStarted:
         while True:
-            events = await self._contracts.task_contract.get_events(
+            events = await self._contracts.get_events(
+                contract_name="task",
                 event_name="TaskStarted",
                 filter_args={"taskId": task_id},
                 from_block=from_block,
@@ -183,7 +184,8 @@ class Task(object):
         self, task_id: int, from_block: int, interval: int
     ) -> TaskSuccess:
         while True:
-            events = await self._contracts.task_contract.get_events(
+            events = await self._contracts.get_events(
+                contract_name="task",
                 event_name="TaskSuccess",
                 filter_args={"taskId": task_id},
                 from_block=from_block,
@@ -201,7 +203,8 @@ class Task(object):
         self, task_id: int, from_block: int, interval: int
     ) -> TaskAborted:
         while True:
-            events = await self._contracts.task_contract.get_events(
+            events = await self._contracts.get_events(
+                contract_name="task",
                 event_name="TaskAborted",
                 filter_args={"taskId": task_id},
                 from_block=from_block,
@@ -219,7 +222,8 @@ class Task(object):
         self, task_id: int, from_block: int, interval: int
     ) -> TaskResultUploaded:
         while True:
-            events = await self._contracts.task_contract.get_events(
+            events = await self._contracts.get_events(
+                contract_name="task",
                 event_name="TaskResultUploaded",
                 filter_args={"taskId": task_id},
                 from_block=from_block,

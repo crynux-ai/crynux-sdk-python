@@ -33,7 +33,7 @@ async def main():
 
     await crynux.init()
     async with crynux:
-        await crynux.generate_images(
+        task_id, result_imgs = await crynux.generate_images(
             dst_dir=dst_dir,
             task_fee=30,
             prompt=prompt,
@@ -49,10 +49,8 @@ async def main():
             timeout=360,
         )
 
-    res_img = dst_dir / "0.png"
-
-    if res_img.exists():
-        print("generate image successfully")
+    if all(img.exists() for img in result_imgs):
+        print(f"generate image successfully in task {task_id}")
     else:
         print("missing result image")
 

@@ -1,8 +1,7 @@
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union, cast
+from typing import TYPE_CHECKING, Optional, Union
 
 from eth_typing import ChecksumAddress
 from web3 import AsyncWeb3
-from web3.contract.async_contract import AsyncContractEvent
 
 from crynux_sdk.models.contracts import ChainTask, TaskType
 
@@ -154,17 +153,3 @@ class TaskContract(ContractWrapperBase):
 
     async def get_node_task(self, address: str) -> int:
         return await self._function_call("getNodeTask", nodeAddress=address)
-
-    async def get_events(
-        self,
-        event_name: str,
-        filter_args: Optional[Dict[str, Any]] = None,
-        from_block: Optional[int] = None,
-        to_block: Optional[int] = None,
-    ):
-        event = self.contract.events[event_name]
-        event = cast(AsyncContractEvent, event)
-        events = await event.get_logs(
-            argument_filters=filter_args, fromBlock=from_block, toBlock=to_block
-        )
-        return list(events)

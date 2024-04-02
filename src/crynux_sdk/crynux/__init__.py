@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple
 
 from anyio import fail_after
 from tenacity import (AsyncRetrying, RetryCallState,
@@ -225,7 +225,7 @@ class Crynux(object):
         timeout: Optional[float] = None,
         wait_interval: int = 1,
         auto_cancel: bool = True,
-    ) -> List[pathlib.Path]:
+    ) -> Tuple[int, List[pathlib.Path]]:
         """
         generate images by crynux network
 
@@ -249,7 +249,7 @@ class Crynux(object):
         wait_interval: The interval in seconds for checking crynux contracts events. Default to 1 second.
         auto_cancel: Whether to cancel the timeout image generation task automatically. Default to True.
 
-        returns: result image paths
+        returns: a tuple of task id and result image paths
         """
         assert self._initialized, "Crynux sdk hasn't been initialized"
         assert not self._closed, "Crynux sdk has been closed"
@@ -300,20 +300,20 @@ class Crynux(object):
                                 interval=wait_interval,
                             )
 
-                    res: List[pathlib.Path] = []
+                    files: List[pathlib.Path] = []
                     async for attemp in AsyncRetrying(
                         wait=wait_fixed(2),
                         stop=stop_after_attempt(max_retries),
                         reraise=True,
                     ):
                         with attemp:
-                            res = await self.task.get_task_result(
+                            files = await self.task.get_task_result(
                                 task_id=task_id,
                                 task_type=TaskType.SD,
                                 count=cap,
                                 dst_dir=dst_dir,
                             )
-                    return res
+                    return task_id, files
 
             except TimeoutError as timeout_exc:
                 if auto_cancel and task_id > 0 and task_created:
@@ -369,7 +369,6 @@ class Crynux(object):
                 )
                 _logger.error(msg)
 
-        res: List[pathlib.Path] = []
         async for attemp in AsyncRetrying(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_timeout_retries),
