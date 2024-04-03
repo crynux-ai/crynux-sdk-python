@@ -33,7 +33,7 @@ async def main():
 
     await crynux.init()
     async with crynux:
-        task_id, result_imgs = await crynux.generate_images(
+        task_id, blocknum, result_imgs = await crynux.generate_images(
             dst_dir=dst_dir,
             task_fee=30,
             prompt=prompt,
@@ -49,6 +49,7 @@ async def main():
             timeout=360,
         )
 
+    print(f"task {task_id} starts at block {blocknum}")
     if all(img.exists() for img in result_imgs):
         print(f"generate image successfully in task {task_id}")
     else:

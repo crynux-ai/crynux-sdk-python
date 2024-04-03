@@ -95,7 +95,7 @@ async def main():
     crynux = Crynux(privkey="0x")
     await crynux.init()
     async with crynux:
-        await crynux.generate_images(
+        task_id, start_blocknum, imgs = await crynux.generate_images(
             dst_dir=dst_dir,
             task_fee=30,
             prompt=prompt,
@@ -137,4 +137,4 @@ Arguments for crynux.generate_images:
 * wait_interval: The interval in seconds for checking crynux contracts events. Default to 1 second.
 * auto_cancel: Whether to cancel the timeout image generation task automatically. Default to True.
 
-* returns: a tuple of task id and result image paths
+* returns: a tuple of task id, blocknum when the task starts, and the result image paths

@@ -225,7 +225,7 @@ class Crynux(object):
         timeout: Optional[float] = None,
         wait_interval: int = 1,
         auto_cancel: bool = True,
-    ) -> Tuple[int, List[pathlib.Path]]:
+    ) -> Tuple[int, int, List[pathlib.Path]]:
         """
         generate images by crynux network
 
@@ -249,7 +249,7 @@ class Crynux(object):
         wait_interval: The interval in seconds for checking crynux contracts events. Default to 1 second.
         auto_cancel: Whether to cancel the timeout image generation task automatically. Default to True.
 
-        returns: a tuple of task id and result image paths
+        returns: a tuple of task id, blocknum when the task starts, and the result image paths
         """
         assert self._initialized, "Crynux sdk hasn't been initialized"
         assert not self._closed, "Crynux sdk has been closed"
@@ -258,11 +258,12 @@ class Crynux(object):
 
         async def _run_task():
             task_id = 0
+            start_blocknum = 0
             task_created = False
             task_success = False
             try:
                 with fail_after(timeout):
-                    blocknum, task_id, cap = await self.task.create_sd_task(
+                    blocknum, tx_hash, task_id, cap = await self.task.create_sd_task(
                         task_fee=task_fee,
                         prompt=prompt,
                         vram_limit=vram_limit,
@@ -272,6 +273,23 @@ class Crynux(object):
                         max_retries=max_retries,
                     )
                     task_created = True
+                    _logger.debug(f"task {task_id} is created at tx {tx_hash.hex()}")
+
+                    async for attemp in AsyncRetrying(
+                        wait=wait_fixed(2),
+                        stop=stop_after_attempt(max_retries),
+                        retry=retry_if_not_exception_type(TaskAbortedError),
+                        reraise=True,
+                    ):
+                        with attemp:
+                            blocknum, tx_hash, _ = await self.task.wait_task_started(
+                                task_id=task_id,
+                                from_block=blocknum,
+                                interval=wait_interval,
+                            )
+                    start_blocknum = blocknum
+                    _logger.debug(f"task {task_id} starts at tx {tx_hash.hex()}")
+                    _logger.info(f"task {task_id} starts")
 
                     _logger.info(f"waiting task {task_id} to complete")
                     async for attemp in AsyncRetrying(
@@ -281,11 +299,12 @@ class Crynux(object):
                         reraise=True,
                     ):
                         with attemp:
-                            await self.task.wait_task_finish(
+                            blocknum, tx_hash, _ = await self.task.wait_task_finish(
                                 task_id=task_id,
                                 from_block=blocknum,
                                 interval=wait_interval,
                             )
+                    _logger.debug(f"task {task_id} finish successfully at tx {tx_hash.hex()}")
                     task_success = True
 
                     async for attemp in AsyncRetrying(
@@ -294,11 +313,12 @@ class Crynux(object):
                         reraise=True,
                     ):
                         with attemp:
-                            await self.task.wait_task_result_uploaded(
+                            blocknum, tx_hash, _, = await self.task.wait_task_result_uploaded(
                                 task_id=task_id,
                                 from_block=blocknum,
                                 interval=wait_interval,
                             )
+                    _logger.debug(f"result of task {task_id} is uploaded at tx {tx_hash.hex()}")
 
                     files: List[pathlib.Path] = []
                     async for attemp in AsyncRetrying(
@@ -313,7 +333,7 @@ class Crynux(object):
                                 count=cap,
                                 dst_dir=dst_dir,
                             )
-                    return task_id, files
+                    return task_id, start_blocknum, files
 
             except TimeoutError as timeout_exc:
                 if auto_cancel and task_id > 0 and task_created:

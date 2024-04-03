@@ -9,6 +9,7 @@ from tenacity import (AsyncRetrying, retry_if_exception,
                       retry_if_not_exception_type, stop_after_attempt,
                       wait_fixed)
 from web3.logs import DISCARD
+from hexbytes import HexBytes
 
 from crynux_sdk.config import TxOption
 from crynux_sdk.contracts import Contracts, TxRevertedError
@@ -40,9 +41,10 @@ class Task(object):
         vram_limit: int,
         cap: int,
         max_retries: int = 5,
-    ) -> Tuple[int, int]:
+    ) -> Tuple[int, HexBytes, int]:
         task_id: int = 0
         blocknum: int = 0
+        tx_hash: HexBytes = HexBytes(b"")
 
         # check allowance of task contract
         async for attemp in AsyncRetrying(
@@ -80,6 +82,7 @@ class Task(object):
                 receipt = await waiter.wait()
 
                 blocknum = receipt["blockNumber"]
+                tx_hash = receipt["transactionHash"]
 
                 events = self._contracts.task_contract.contract.events.TaskPending().process_receipt(
                     receipt, errors=DISCARD
@@ -114,7 +117,7 @@ class Task(object):
                 await self._relay.create_task(task_id=task_id, task_args=task_args)
         _logger.info(f"upload task args of task {task_id} to relay")
 
-        return blocknum, task_id
+        return blocknum, tx_hash, task_id
 
     async def cancel_task(self, task_id: int):
         waiter = await self._contracts.task_contract.cancel_task(
@@ -131,7 +134,7 @@ class Task(object):
         negative_prompt: str = "",
         max_retries: int = 5,
         task_optional_args: Optional[sd_args.TaskOptionalArgs] = None,
-    ) -> Tuple[int, int, int]:
+    ) -> Tuple[int, HexBytes, int, int]:
         task_args_obj: Dict[str, Any] = {
             "prompt": prompt,
             "base_model": base_model,
@@ -151,7 +154,7 @@ class Task(object):
             else:
                 vram_limit = 10
 
-        blocknum, task_id = await self._create_task(
+        blocknum, tx_hash, task_id = await self._create_task(
             task_args=task_args_str,
             task_type=TaskType.SD,
             task_fee=task_fee,
@@ -159,11 +162,11 @@ class Task(object):
             cap=cap,
             max_retries=max_retries,
         )
-        return blocknum, task_id, cap
+        return blocknum, tx_hash, task_id, cap
 
     async def wait_task_started(
         self, task_id: int, from_block: int, interval: int
-    ) -> TaskStarted:
+    ) -> Tuple[int, HexBytes, TaskStarted]:
         while True:
             events = await self._contracts.get_events(
                 contract_name="task",
@@ -176,13 +179,13 @@ class Task(object):
                 assert isinstance(res, TaskStarted)
                 assert res.task_id == task_id
                 _logger.info(f"task {task_id} started")
-                return res
+                return events[0]["blockNumber"], events[0]["transactionHash"], res
 
             await sleep(interval)
 
     async def wait_task_success(
         self, task_id: int, from_block: int, interval: int
-    ) -> TaskSuccess:
+    ) -> Tuple[int, HexBytes, TaskSuccess]:
         while True:
             events = await self._contracts.get_events(
                 contract_name="task",
@@ -195,13 +198,13 @@ class Task(object):
                 assert isinstance(res, TaskSuccess)
                 assert res.task_id == task_id
                 _logger.info(f"task {task_id} success")
-                return res
+                return events[0]["blockNumber"], events[0]["transactionHash"], res
 
             await sleep(interval)
 
     async def wait_task_aborted(
         self, task_id: int, from_block: int, interval: int
-    ) -> TaskAborted:
+    ) -> Tuple[int, HexBytes, TaskAborted]:
         while True:
             events = await self._contracts.get_events(
                 contract_name="task",
@@ -214,13 +217,13 @@ class Task(object):
                 assert isinstance(res, TaskAborted)
                 assert res.task_id == task_id
                 _logger.info(f"task {task_id} aborted, reason: {res.reason}")
-                return res
+                return events[0]["blockNumber"], events[0]["transactionHash"], res
 
             await sleep(interval)
 
     async def wait_task_result_uploaded(
         self, task_id: int, from_block: int, interval: int
-    ) -> TaskResultUploaded:
+    ) -> Tuple[int, HexBytes, TaskResultUploaded]:
         while True:
             events = await self._contracts.get_events(
                 contract_name="task",
@@ -233,14 +236,14 @@ class Task(object):
                 assert isinstance(res, TaskResultUploaded)
                 assert res.task_id == task_id
                 _logger.info(f"task {task_id} result is uploaded")
-                return res
+                return events[0]["blockNumber"], events[0]["transactionHash"], res
 
             await sleep(interval)
 
     async def wait_task_finish(self, task_id: int, from_block: int, interval: int = 1):
 
         async def raise_when_task_aborted():
-            event = await self.wait_task_aborted(
+            _, _, event = await self.wait_task_aborted(
                 task_id=task_id, from_block=from_block, interval=interval
             )
             raise TaskAbortedError(task_id, event.reason)
@@ -248,10 +251,11 @@ class Task(object):
         async with create_task_group() as tg:
             tg.start_soon(raise_when_task_aborted)
 
-            await self.wait_task_success(
+            res = await self.wait_task_success(
                 task_id=task_id, from_block=from_block, interval=interval
             )
             tg.cancel_scope.cancel()
+        return res
 
     async def get_task_result(
         self,
