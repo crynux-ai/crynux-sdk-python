@@ -15,6 +15,7 @@ dependencies = [
     "anyio~=3.7.1",
     "pydantic~=2.2.1",
     "tenacity~=8.2.3",
+    "importlib_resources"
 ]
 version = "0.0.1"
 
