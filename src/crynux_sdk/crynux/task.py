@@ -4,7 +4,7 @@ import logging
 import pathlib
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from anyio import create_task_group, sleep
+from anyio import create_task_group, sleep, Lock
 from tenacity import (AsyncRetrying, retry_if_exception,
                       retry_if_not_exception_type, stop_after_attempt,
                       wait_fixed)
@@ -33,6 +33,8 @@ class Task(object):
         self._relay = relay
         self._option = option
 
+        self._create_task_lock = Lock()
+
     async def _create_task(
         self,
         task_args: str,
@@ -54,32 +56,33 @@ class Task(object):
             reraise=True,
         ):
             with attemp:
-                allowance = await self._contracts.token_contract.allowance(
-                    self._contracts.task_contract.address
-                )
-                if allowance < task_fee:
-                    waiter = await self._contracts.token_contract.approve(
-                        self._contracts.task_contract.address,
-                        task_fee,
+                async with self._create_task_lock:
+                    allowance = await self._contracts.token_contract.allowance(
+                        self._contracts.task_contract.address
+                    )
+                    if allowance < task_fee:
+                        waiter = await self._contracts.token_contract.approve(
+                            self._contracts.task_contract.address,
+                            task_fee,
+                            option=self._option,
+                        )
+                        await waiter.wait()
+                        _logger.info(f"approve task contract {task_fee} cnx")
+
+                    task_hash = get_task_hash(task_args)
+                    data_hash = bytes([0] * 32)
+
+                    # create task on chain
+                    waiter = await self._contracts.task_contract.create_task(
+                        task_type=task_type,
+                        task_hash=task_hash,
+                        data_hash=data_hash,
+                        vram_limit=vram_limit,
+                        task_fee=task_fee,
+                        cap=cap,
                         option=self._option,
                     )
-                    await waiter.wait()
-                    _logger.info(f"approve task contract {task_fee} cnx")
-
-                task_hash = get_task_hash(task_args)
-                data_hash = bytes([0] * 32)
-
-                # create task on chain
-                waiter = await self._contracts.task_contract.create_task(
-                    task_type=task_type,
-                    task_hash=task_hash,
-                    data_hash=data_hash,
-                    vram_limit=vram_limit,
-                    task_fee=task_fee,
-                    cap=cap,
-                    option=self._option,
-                )
-                receipt = await waiter.wait()
+                    receipt = await waiter.wait()
 
                 blocknum = receipt["blockNumber"]
                 tx_hash = receipt["transactionHash"]
