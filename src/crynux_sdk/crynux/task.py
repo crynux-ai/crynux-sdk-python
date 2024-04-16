@@ -174,15 +174,16 @@ class Task(object):
             events = await self._contracts.get_events(
                 contract_name="task",
                 event_name="TaskStarted",
-                filter_args={"taskId": task_id},
                 from_block=from_block,
             )
-            if len(events) > 0:
-                res = load_event_from_contracts(events[0])
+            for event in events:
+                res = load_event_from_contracts(event)
                 assert isinstance(res, TaskStarted)
-                assert res.task_id == task_id
-                _logger.info(f"task {task_id} started")
-                return events[0]["blockNumber"], events[0]["transactionHash"], res
+                if res.task_id == task_id:
+                    return event["blockNumber"], event["transactionHash"], res
+                
+                if event["blockNumber"] > from_block:
+                    from_block = event["blockNumber"]
 
             await sleep(interval)
 
