@@ -13,9 +13,10 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "web3~=6.8.0",
     "anyio~=3.7.1",
-    "pydantic~=2.2.1",
+    "pydantic",
     "tenacity~=8.2.3",
-    "importlib_resources"
+    "importlib_resources",
+    "eth-rlp<2.0.0"
 ]
 version = "0.0.1"
 
