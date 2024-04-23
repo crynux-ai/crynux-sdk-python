@@ -10,6 +10,7 @@ from eth_typing import ChecksumAddress
 from hexbytes import HexBytes
 from typing_extensions import ParamSpec
 from web3 import AsyncWeb3, WebsocketProviderV2
+from web3.exceptions import ContractLogicError
 from web3.contract.async_contract import (AsyncContract, AsyncContractEvent,
                                           AsyncContractFunction)
 from web3.types import EventData, TxParams
@@ -32,6 +33,22 @@ Contract_Func = Callable[[], AsyncContract]
 
 T = TypeVar("T")
 P = ParamSpec("P")
+
+
+@asynccontextmanager
+async def catch_tx_revert_error(method: str):
+    try:
+        yield
+    except ContractLogicError as e:
+        reason = ""
+        if e.message is not None:
+            reason = e.message
+        elif e.data is not None and isinstance(e.data, str):
+            if e.data.startswith("08c379a0"):
+                reason_hex = e.data[8:]
+                reason: str = decode(["string"], bytes.fromhex(reason_hex))[0]
+
+        raise TxRevertedError(method=method, reason=reason) from e
 
 
 class TxWaiter(object):
@@ -65,7 +82,7 @@ class TxWaiter(object):
                 self.tx_hash, self.timeout, self.interval
             )
             if not receipt["status"]:
-                try:
+                async with catch_tx_revert_error(self.method):
                     tx = await self.w3.eth.get_transaction(self.tx_hash)
                     await self.w3.eth.call(
                         {
@@ -80,14 +97,6 @@ class TxWaiter(object):
                         tx["blockNumber"] - 1,
                     )
                     raise TxRevertedError(method=self.method, reason="Unknown")
-                except (TxRevertedError, get_cancelled_exc_class()):
-                    raise
-                except Exception as e:
-                    reason = str(e)
-                    if reason.startswith("08c379a0"):
-                        reason_hex = reason[8:]
-                        reason: str = decode(["string"], bytes.fromhex(reason_hex))[0]
-                    raise TxRevertedError(method=self.method, reason=reason) from e
             return receipt
 
 
@@ -132,7 +141,7 @@ class ContractWrapperBase(object):
         option = kwargs.pop("option", None)
 
         opt: TxParams = {}
-        if opt is not None:
+        if option is not None:
             opt.update(**option)
         async with self._nonce_lock:
             assert self.w3.eth.default_account, "The default account is empty."
@@ -144,11 +153,12 @@ class ContractWrapperBase(object):
             if "from" not in opt:
                 opt["from"] = self.w3.eth.default_account
 
-            tx_hash = await _contract_builder.constructor(
-                *args, **kwargs
-            ).transact(  # type: ignore
-                opt
-            )
+            async with catch_tx_revert_error("deploy"):
+                tx_hash = await _contract_builder.constructor(
+                    *args, **kwargs
+                ).transact(  # type: ignore
+                    opt
+                )
         waiter = TxWaiter(self.w3, "deploy", tx_hash=tx_hash, lock=self._call_lock)
         receipt = await waiter.wait()
         address = receipt["contractAddress"]
@@ -187,7 +197,8 @@ class ContractWrapperBase(object):
             )
             opt["nonce"] = nonce
             tx_func: AsyncContractFunction = getattr(self.contract.functions, method)
-            tx_hash: HexBytes = await tx_func(*args, **kwargs).transact(opt)
+            async with catch_tx_revert_error(method):
+                tx_hash: HexBytes = await tx_func(*args, **kwargs).transact(opt)
 
         return TxWaiter(
             w3=self.w3,

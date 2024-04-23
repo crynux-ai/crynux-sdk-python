@@ -5,7 +5,7 @@ from contextlib import ExitStack
 from typing import BinaryIO, List
 
 import certifi
-from aiohttp import (ClientConnectionError, ClientResponse, ClientSession,
+from aiohttp import (ClientResponseError, ClientResponse, ClientSession,
                      ClientTimeout, TCPConnector)
 from anyio import wrap_file
 
@@ -20,7 +20,7 @@ async def _process_resp(resp: ClientResponse, method: str):
     try:
         resp.raise_for_status()
         return resp
-    except ClientConnectionError as e:
+    except ClientResponseError as e:
         message = str(e)
         if resp.status == 400:
             try:
