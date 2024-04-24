@@ -132,7 +132,7 @@ class ContractWrapperBase(object):
         option = kwargs.pop("option", None)
 
         opt: TxParams = {}
-        if opt is not None:
+        if option is not None:
             opt.update(**option)
         async with self._nonce_lock:
             assert self.w3.eth.default_account, "The default account is empty."
