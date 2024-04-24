@@ -18,6 +18,7 @@ from crynux_sdk.config import TxOption
 from . import crynux_token, network_stats, node, qos, task, task_queue
 from .exceptions import TxRevertedError
 from .utils import TxWaiter
+from .w3_pool import W3Pool
 
 __all__ = ["TxRevertedError", "Contracts", "TxWaiter", "get_contracts", "set_contracts"]
 
@@ -43,34 +44,21 @@ class Contracts(object):
         provider_path: Optional[str] = None,
         privkey: str = "",
         default_account_index: Optional[int] = None,
-        timeout: float = 30,
+        pool_size: int = 5,
+        timeout: int = 10,
     ):
-        self._w3 = None
-        self._session = None
-        self.provider_type: ProviderType = ProviderType.Other
-        if provider is None:
-            if provider_path is None:
-                raise ValueError("provider and provider_path cannot be all None.")
-            if provider_path.startswith("http"):
-                self.provider_type = ProviderType.HTTP
-                self.provider = AsyncHTTPProvider(provider_path)
-                ssl_context = ssl.create_default_context(cafile=certifi.where())
-                session = ClientSession(timeout=ClientTimeout(timeout), connector=TCPConnector(ssl=ssl_context))
-                self._session = session
-            elif provider_path.startswith("ws"):
-                self.provider_type = ProviderType.WS
-                self.provider = WebsocketProviderV2(provider_path, call_timeout=timeout)
-            else:
-                raise ValueError(f"unsupported provider {provider_path}")
-        else:
-            self.provider = provider
-            self._w3 = AsyncWeb3(provider)
-
-        self._privkey = privkey
-        self._default_account_index = default_account_index
-
+        self._w3_pool = W3Pool(
+            provider=provider,
+            provider_path=provider_path,
+            privkey=privkey,
+            default_account_index=default_account_index,
+            pool_size=pool_size,
+            timeout=timeout,
+        )
+        
         self._initialized = False
         self._closed = False
+        self._account = None
 
     async def init(
         self,
@@ -83,136 +71,112 @@ class Contracts(object):
         *,
         option: "Optional[TxOption]" = None,
     ):
-        if self._w3 is None:
-            if self.provider_type == ProviderType.HTTP:
-                assert isinstance(self.provider, AsyncHTTPProvider)
-                assert self._session is not None
-                await self.provider.cache_async_session(session=self._session)
-                self._w3 = AsyncWeb3(self.provider)
-            elif self.provider_type == ProviderType.WS:
-                assert isinstance(self.provider, WebsocketProviderV2)
-                self._w3 = AsyncWeb3.persistent_websocket(self.provider)
-                await self._w3.provider.connect()
+        async with self._w3_pool.get() as w3:
+            assert w3.eth.default_account, "Wallet address is empty"
+            self._account = w3.eth.default_account
+            _logger.info(f"Wallet address is {w3.eth.default_account}")
+
+            if token_contract_address is not None:
+                self.token_contract = crynux_token.TokenContract(
+                    w3, w3.to_checksum_address(token_contract_address)
+                )
             else:
-                raise ValueError("Unknown provider type")
+                self.token_contract = crynux_token.TokenContract(w3)
+                await self.token_contract.deploy(option=option)
+                token_contract_address = self.token_contract.address
 
-        if self._privkey != "":
-            account: LocalAccount = self._w3.eth.account.from_key(self._privkey)
-            middleware = await async_construct_sign_and_send_raw_middleware(account)
-            self._w3.middleware_onion.add(middleware)
-            self._w3.eth.default_account = account.address
-        elif self._default_account_index is not None:
-            self._w3.eth.default_account = (await self._w3.eth.accounts)[
-                self._default_account_index
-            ]
-        _logger.info(f"Wallet address is {self._w3.eth.default_account}")
+            if qos_contract_address is not None:
+                self.qos_contract = qos.QOSContract(
+                    w3, w3.to_checksum_address(qos_contract_address)
+                )
+            elif task_contract_address is None:
+                # task contract has not been deployed, need deploy qos contract
+                self.qos_contract = qos.QOSContract(w3)
+                await self.qos_contract.deploy(option=option)
+                qos_contract_address = self.qos_contract.address
 
-        if token_contract_address is not None:
-            self.token_contract = crynux_token.TokenContract(
-                self.w3, self.w3.to_checksum_address(token_contract_address)
-            )
-        else:
-            self.token_contract = crynux_token.TokenContract(self.w3)
-            await self.token_contract.deploy(option=option)
-            token_contract_address = self.token_contract.address
+            if task_queue_contract_address is not None:
+                self.task_queue_contract = task_queue.TaskQueueContract(
+                    w3, w3.to_checksum_address(task_queue_contract_address)
+                )
+            elif task_contract_address is None:
+                # task contract has not been deployed, need deploy qos contract
+                self.task_queue_contract = task_queue.TaskQueueContract(w3)
+                await self.task_queue_contract.deploy(option=option)
+                task_queue_contract_address = self.task_queue_contract.address
 
-        if qos_contract_address is not None:
-            self.qos_contract = qos.QOSContract(
-                self.w3, self.w3.to_checksum_address(qos_contract_address)
-            )
-        elif task_contract_address is None:
-            # task contract has not been deployed, need deploy qos contract
-            self.qos_contract = qos.QOSContract(self.w3)
-            await self.qos_contract.deploy(option=option)
-            qos_contract_address = self.qos_contract.address
+            if netstats_contract_address is not None:
+                self.netstats_contract = network_stats.NetworkStatsContract(
+                    w3, w3.to_checksum_address(netstats_contract_address)
+                )
+            elif task_contract_address is None:
+                # task contract has not been deployed, need deploy qos contract
+                self.netstats_contract = network_stats.NetworkStatsContract(w3)
+                await self.netstats_contract.deploy(option=option)
+                netstats_contract_address = self.netstats_contract.address
 
-        if task_queue_contract_address is not None:
-            self.task_queue_contract = task_queue.TaskQueueContract(
-                self.w3, self.w3.to_checksum_address(task_queue_contract_address)
-            )
-        elif task_contract_address is None:
-            # task contract has not been deployed, need deploy qos contract
-            self.task_queue_contract = task_queue.TaskQueueContract(self.w3)
-            await self.task_queue_contract.deploy(option=option)
-            task_queue_contract_address = self.task_queue_contract.address
+            if node_contract_address is not None:
+                self.node_contract = node.NodeContract(
+                    w3, w3.to_checksum_address(node_contract_address)
+                )
+            else:
+                assert qos_contract_address is not None, "QOS contract address is None"
+                assert netstats_contract_address is not None, "NetworkStats contract address is None"
+                self.node_contract = node.NodeContract(w3)
+                await self.node_contract.deploy(
+                    token_contract_address,
+                    qos_contract_address,
+                    netstats_contract_address,
+                    option=option,
+                )
+                node_contract_address = self.node_contract.address
+                await self.qos_contract.update_node_contract_address(
+                    node_contract_address, option=option
+                )
+                await self.netstats_contract.update_node_contract_address(
+                    node_contract_address, option=option
+                )
 
-        if netstats_contract_address is not None:
-            self.netstats_contract = network_stats.NetworkStatsContract(
-                self.w3, self.w3.to_checksum_address(netstats_contract_address)
-            )
-        elif task_contract_address is None:
-            # task contract has not been deployed, need deploy qos contract
-            self.netstats_contract = network_stats.NetworkStatsContract(self.w3)
-            await self.netstats_contract.deploy(option=option)
-            netstats_contract_address = self.netstats_contract.address
+            if task_contract_address is not None:
+                self.task_contract = task.TaskContract(
+                    w3, w3.to_checksum_address(task_contract_address)
+                )
+            else:
+                assert qos_contract_address is not None, "QOS contract address is None"
+                assert task_queue_contract_address is not None, "Task queue contract address is None"
+                assert netstats_contract_address is not None, "NetworkStats contract address is None"
 
-        if node_contract_address is not None:
-            self.node_contract = node.NodeContract(
-                self.w3, self.w3.to_checksum_address(node_contract_address)
-            )
-        else:
-            assert qos_contract_address is not None, "QOS contract address is None"
-            assert netstats_contract_address is not None, "NetworkStats contract address is None"
-            self.node_contract = node.NodeContract(self.w3)
-            await self.node_contract.deploy(
-                token_contract_address,
-                qos_contract_address,
-                netstats_contract_address,
-                option=option,
-            )
-            node_contract_address = self.node_contract.address
-            await self.qos_contract.update_node_contract_address(
-                node_contract_address, option=option
-            )
-            await self.netstats_contract.update_node_contract_address(
-                node_contract_address, option=option
-            )
+                self.task_contract = task.TaskContract(w3)
+                await self.task_contract.deploy(
+                    node_contract_address,
+                    token_contract_address,
+                    qos_contract_address,
+                    task_queue_contract_address,
+                    netstats_contract_address,
+                    option=option,
+                )
+                task_contract_address = self.task_contract.address
 
-        if task_contract_address is not None:
-            self.task_contract = task.TaskContract(
-                self.w3, self.w3.to_checksum_address(task_contract_address)
-            )
-        else:
-            assert qos_contract_address is not None, "QOS contract address is None"
-            assert task_queue_contract_address is not None, "Task queue contract address is None"
-            assert netstats_contract_address is not None, "NetworkStats contract address is None"
+                await self.node_contract.update_task_contract_address(
+                    task_contract_address, option=option
+                )
+                await self.qos_contract.update_task_contract_address(
+                    task_contract_address, option=option
+                )
+                await self.task_queue_contract.update_task_contract_address(
+                    task_contract_address, option=option
+                )
+                await self.netstats_contract.update_task_contract_address(
+                    task_contract_address, option=option
+                )
 
-            self.task_contract = task.TaskContract(self.w3)
-            await self.task_contract.deploy(
-                node_contract_address,
-                token_contract_address,
-                qos_contract_address,
-                task_queue_contract_address,
-                netstats_contract_address,
-                option=option,
-            )
-            task_contract_address = self.task_contract.address
+            self._initialized = True
 
-            await self.node_contract.update_task_contract_address(
-                task_contract_address, option=option
-            )
-            await self.qos_contract.update_task_contract_address(
-                task_contract_address, option=option
-            )
-            await self.task_queue_contract.update_task_contract_address(
-                task_contract_address, option=option
-            )
-            await self.netstats_contract.update_task_contract_address(
-                task_contract_address, option=option
-            )
-
-        self._initialized = True
-
-        return self
+            return self
 
     async def close(self):
         if not self._closed:
-            if self.provider_type == ProviderType.HTTP:
-                if self._session is not None and not self._session.closed:
-                    await self._session.close()
-            elif self.provider_type == ProviderType.WS:
-                assert isinstance(self.provider, WebsocketProviderV2)
-                await self.provider.disconnect()
+            await self._w3_pool.close()
             self._closed = True
 
     async def __aenter__(self):
@@ -254,39 +218,36 @@ class Contracts(object):
         )
 
     @property
-    def w3(self):
-        assert self._w3 is not None
-        return self._w3
-
-    @property
     def account(self) -> ChecksumAddress:
-        res = self.w3.eth.default_account
-        assert res, "Contracts has not been initialized!"
-        return res
+        assert self._account is not None, "Contracts has not been initialized"
+        return self._account
 
     @property
     def initialized(self) -> bool:
         return self._initialized
 
     async def get_current_block_number(self) -> int:
-        return await self.w3.eth.get_block_number()
+        async with self._w3_pool.get() as w3:
+            return await w3.eth.get_block_number()
 
     async def get_balance(self, account: ChecksumAddress) -> int:
-        return await self.w3.eth.get_balance(account)
+        async with self._w3_pool.get() as w3:
+            return await w3.eth.get_balance(account)
 
     async def transfer(
         self, to: str, amount: int, *, option: "Optional[TxOption]" = None
     ):
-        opt: TxParams = {}
-        if option is not None:
-            opt.update(**option)
-        opt["to"] = self.w3.to_checksum_address(to)
-        opt["from"] = self.account
-        opt["value"] = self.w3.to_wei(amount, "Wei")
+        async with self._w3_pool.get() as w3:
+            opt: TxParams = {}
+            if option is not None:
+                opt.update(**option)
+            opt["to"] = w3.to_checksum_address(to)
+            opt["from"] = self.account
+            opt["value"] = w3.to_wei(amount, "Wei")
 
-        tx_hash = await self.w3.eth.send_transaction(opt)
-        receipt = await self.w3.eth.wait_for_transaction_receipt(tx_hash)
-        return receipt
+            tx_hash = await w3.eth.send_transaction(opt)
+            receipt = await w3.eth.wait_for_transaction_receipt(tx_hash)
+            return receipt
 
 
 _default_contracts: Optional[Contracts] = None
