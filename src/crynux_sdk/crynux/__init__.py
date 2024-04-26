@@ -77,7 +77,7 @@ class Crynux(object):
         gas_price: Optional[int] = None,
         max_fee_per_gas: Optional[int] = None,
         max_priority_fee_per_gas: Optional[int] = None,
-        contracts_timeout: float = 30,
+        contracts_timeout: int = 30,
         relay_timeout: float = 30,
         contracts: Optional[Contracts] = None,
         relay: Optional[Relay] = None,
