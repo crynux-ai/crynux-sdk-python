@@ -13,7 +13,7 @@ class TxOption(TypedDict, total=False):
 
 def get_default_tx_option() -> TxOption:
     return {
-        "gasPrice": Web3.to_wei(20000000000, "wei"),
+        "gasPrice": Web3.to_wei(1, "wei"),
         "gas": 4294967
     }
 
