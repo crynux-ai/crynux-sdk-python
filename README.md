@@ -75,15 +75,14 @@ async def main():
     await crynux.init()
     async with crynux:
         await crynux.deposit(
-            "0x", 10, 10, "ether"
+            "0x", 10, "ether"
         )
 ```
 
 Arguments for crynux.deposit_tokens:
 
 * address: Address which deposit tokens to
-* eth: Eth tokens need to deposit, 0 means not to deposit eth
-* cnx: Cnx tokens need to deposit, 0 means not to deposit cnx
+* amount: Tokens need to deposit, 0 means not to deposit eth
 * unit: The unit for eth and cnx tokens, default to "ether"
 
 ## generate images

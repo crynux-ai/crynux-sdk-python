@@ -188,20 +188,19 @@ class Crynux(object):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    async def deposit(self, address: str, eth: int, unit: str = "ether"):
+    async def deposit(self, address: str, amount: int, unit: str = "ether"):
         """
         deposit tokens to the address
 
         address: Address which deposit tokens to
-        eth: Eth tokens need to deposit, 0 means not to deposit eth
-        cnx: Cnx tokens need to deposit, 0 means not to deposit cnx
+        amount: Tokens need to deposit, 0 means not to deposit eth
         unit: The unit for eth and cnx tokens, default to "ether"
         """
         assert self._initialized, "Crynux sdk hasn't been initialized"
         assert not self._closed, "Crynux sdk has been closed"
 
-        eth_wei = Web3.to_wei(eth, unit)
-        await self.token.transfer_eth(address=address, eth=eth_wei)
+        eth_wei = Web3.to_wei(amount, unit)
+        await self.token.transfer(address=address, amount=eth_wei)
 
     async def generate_images(
         self,
