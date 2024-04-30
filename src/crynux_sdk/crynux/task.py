@@ -5,18 +5,27 @@ import pathlib
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from anyio import create_task_group, sleep, Lock
-from tenacity import (AsyncRetrying, retry_if_exception,
-                      retry_if_not_exception_type, stop_after_attempt,
-                      wait_fixed)
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_fixed,
+)
 from web3.logs import DISCARD
 from hexbytes import HexBytes
 
 from crynux_sdk.config import TxOption
 from crynux_sdk.contracts import Contracts, TxRevertedError
 from crynux_sdk.models import sd_args
-from crynux_sdk.models.contracts import (TaskAborted, TaskResultUploaded,
-                                         TaskStarted, TaskSuccess, TaskType,
-                                         load_event_from_contracts)
+from crynux_sdk.models.contracts import (
+    TaskAborted,
+    TaskResultUploaded,
+    TaskStarted,
+    TaskSuccess,
+    TaskType,
+    load_event_from_contracts,
+)
 from crynux_sdk.relay import Relay, RelayError
 from crynux_sdk.utils import get_task_hash
 
@@ -57,18 +66,6 @@ class Task(object):
         ):
             with attemp:
                 async with self._create_task_lock:
-                    allowance = await self._contracts.token_contract.allowance(
-                        self._contracts.task_contract.address
-                    )
-                    if allowance < task_fee:
-                        waiter = await self._contracts.token_contract.approve(
-                            self._contracts.task_contract.address,
-                            task_fee,
-                            option=self._option,
-                        )
-                        await waiter.wait()
-                        _logger.info(f"approve task contract {task_fee} cnx")
-
                     task_hash = get_task_hash(task_args)
                     data_hash = bytes([0] * 32)
 
@@ -87,8 +84,8 @@ class Task(object):
                 blocknum = receipt["blockNumber"]
                 tx_hash = receipt["transactionHash"]
 
-                events = self._contracts.task_contract.contract.events.TaskPending().process_receipt(
-                    receipt, errors=DISCARD
+                events = await self._contracts.event_process_receipt(
+                    "task", "TaskPending", receipt, errors=DISCARD
                 )
                 assert len(events) == 1
 
@@ -181,7 +178,7 @@ class Task(object):
                 assert isinstance(res, TaskStarted)
                 if res.task_id == task_id:
                     return event["blockNumber"], event["transactionHash"], res
-                
+
                 if event["blockNumber"] > from_block:
                     from_block = event["blockNumber"]
 
@@ -286,4 +283,3 @@ class Task(object):
                 tg.start_soon(_download_result, task_id, i, file)
                 res.append(file)
         return res
-

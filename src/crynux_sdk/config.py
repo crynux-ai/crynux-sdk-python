@@ -13,26 +13,25 @@ class TxOption(TypedDict, total=False):
 
 def get_default_tx_option() -> TxOption:
     return {
-        "chainId": 42,
-        "gas": 4294967,
-        "gasPrice": Web3.to_wei(1, "wei")
+        "gasPrice": Web3.to_wei(1, "wei"),
+        "gas": 4294967
     }
 
 
 def get_default_contract_config():
     return {
-        "token": "0x95E7e7Ed5463Ff482f61585605a0ff278e0E1FFb",
-        "node": "0xc674d7d3599Cb566eC8027767f410dd8cD7Bd36D",
-        "task": "0x9b483dc4D18a35802DD4fB0fE9f02A8b32FaD906",
-        "qos": "0x91754172B22b4ba8ff2F34C2A7C90cA7ce96B806",
-        "task_queue": "0xeA44D3565B48e4791529F591C0bBDA2AC8958258",
-        "netstats": "0xaa0F19cb42a19415591003Ed9D99c40cE69B0224",
+        "token": "0xB47E277aE7Cbb93949D7202b6e29e33f541EC262",
+        "node": "0x7334e4EA8D6328108fcA0bE7B3042458f058a74b",
+        "task": "0x02700Ae3Cc6927a1c957ff48F0D6262236924f82",
+        "qos": "0xE15b5DD09f9867C8dD0FbC0f57216b440300c99d",
+        "task_queue": "0x719f8f1e106BeF85f2ffC1D23e86C9cbCb7ddB67",
+        "netstats": "0xd14f963B54Deff1993FF7987954602c9593d36A4",
     }
 
 
 def get_default_provider_path() -> str:
-    return "https://block-node.crynux.ai/rpc"
+    return "https://json-rpc.rolx.evm.ra.blumbus.noisnemyd.xyz"
 
 
 def get_default_relay_url() -> str:
-    return "https://relay.h.crynux.ai"
+    return "https://dy.relay.crynux.ai"
