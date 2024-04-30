@@ -29,7 +29,6 @@ class ProviderType(IntEnum):
 class Contracts(object):
     node_contract: node.NodeContract
     task_contract: task.TaskContract
-    token_contract: crynux_token.TokenContract
     qos_contract: qos.QOSContract
     task_queue_contract: task_queue.TaskQueueContract
     netstats_contract: network_stats.NetworkStatsContract
@@ -60,7 +59,6 @@ class Contracts(object):
 
     async def init(
         self,
-        token_contract_address: Optional[str] = None,
         node_contract_address: Optional[str] = None,
         task_contract_address: Optional[str] = None,
         qos_contract_address: Optional[str] = None,
@@ -74,15 +72,6 @@ class Contracts(object):
                 assert w3.eth.default_account, "Wallet address is empty"
                 self._account = w3.eth.default_account
                 _logger.info(f"Wallet address is {w3.eth.default_account}")
-
-                if token_contract_address is not None:
-                    self.token_contract = crynux_token.TokenContract(
-                        self._w3_pool, w3.to_checksum_address(token_contract_address)
-                    )
-                else:
-                    self.token_contract = crynux_token.TokenContract(self._w3_pool)
-                    await self.token_contract.deploy(option=option, w3=w3)
-                    token_contract_address = self.token_contract.address
 
                 if qos_contract_address is not None:
                     self.qos_contract = qos.QOSContract(
@@ -127,7 +116,6 @@ class Contracts(object):
                     ), "NetworkStats contract address is None"
                     self.node_contract = node.NodeContract(self._w3_pool)
                     await self.node_contract.deploy(
-                        token_contract_address,
                         qos_contract_address,
                         netstats_contract_address,
                         option=option,
@@ -157,7 +145,6 @@ class Contracts(object):
                     self.task_contract = task.TaskContract(self._w3_pool)
                     await self.task_contract.deploy(
                         node_contract_address,
-                        token_contract_address,
                         qos_contract_address,
                         task_queue_contract_address,
                         netstats_contract_address,
@@ -198,9 +185,7 @@ class Contracts(object):
         return await self.close()
 
     def get_contract(self, name: str):
-        if name == "token":
-            return self.token_contract
-        elif name == "node":
+        if name == "node":
             return self.node_contract
         elif name == "task":
             return self.task_contract

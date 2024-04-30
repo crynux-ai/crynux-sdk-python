@@ -66,18 +66,6 @@ class Task(object):
         ):
             with attemp:
                 async with self._create_task_lock:
-                    allowance = await self._contracts.token_contract.allowance(
-                        self._contracts.task_contract.address
-                    )
-                    if allowance < task_fee:
-                        waiter = await self._contracts.token_contract.approve(
-                            self._contracts.task_contract.address,
-                            task_fee,
-                            option=self._option,
-                        )
-                        await waiter.wait()
-                        _logger.info(f"approve task contract {task_fee} cnx")
-
                     task_hash = get_task_hash(task_args)
                     data_hash = bytes([0] * 32)
 

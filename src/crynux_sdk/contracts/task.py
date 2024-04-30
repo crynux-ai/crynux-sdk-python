@@ -41,8 +41,8 @@ class TaskContract(ContractWrapper):
             taskHash=task_hash,
             dataHash=data_hash,
             vramLimit=vram_limit,
-            taskFee=task_fee,
             cap=cap,
+            value=task_fee,
             w3=w3,
         )
 

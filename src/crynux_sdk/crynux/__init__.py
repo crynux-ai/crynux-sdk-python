@@ -66,7 +66,6 @@ class Crynux(object):
         privkey: Optional[str] = None,
         chain_provider_path: Optional[str] = None,
         relay_url: Optional[str] = None,
-        token_contract_address: Optional[str] = None,
         node_contract_address: Optional[str] = None,
         task_contract_address: Optional[str] = None,
         qos_contract_address: Optional[str] = None,
@@ -117,9 +116,6 @@ class Crynux(object):
 
         default_contract_config = get_default_contract_config()
 
-        self.token_contract_address = (
-            token_contract_address or default_contract_config["token"]
-        )
         self.node_contract_address = (
             node_contract_address or default_contract_config["node"]
         )
@@ -170,7 +166,6 @@ class Crynux(object):
     async def init(self):
         if not self.contracts.initialized:
             await self.contracts.init(
-                token_contract_address=self.token_contract_address,
                 node_contract_address=self.node_contract_address,
                 task_contract_address=self.task_contract_address,
                 qos_contract_address=self.qos_contract_address,
@@ -193,7 +188,7 @@ class Crynux(object):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    async def deposit(self, address: str, eth: int, cnx: int, unit: str = "ether"):
+    async def deposit(self, address: str, eth: int, unit: str = "ether"):
         """
         deposit tokens to the address
 
@@ -207,8 +202,6 @@ class Crynux(object):
 
         eth_wei = Web3.to_wei(eth, unit)
         await self.token.transfer_eth(address=address, eth=eth_wei)
-        cnx_wei = Web3.to_wei(cnx, unit)
-        await self.token.transfer_cnx(address=address, cnx=cnx_wei)
 
     async def generate_images(
         self,
