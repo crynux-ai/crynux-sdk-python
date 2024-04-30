@@ -10,7 +10,7 @@ from web3.types import TxParams, TxReceipt
 
 from crynux_sdk.config import TxOption
 
-from . import crynux_token, network_stats, node, qos, task, task_queue
+from . import network_stats, node, qos, task, task_queue
 from .exceptions import TxRevertedError
 from .utils import ContractWrapper, TxWaiter
 from .w3_pool import W3Pool

@@ -19,7 +19,7 @@ async def main():
     address = "0x906C8eB781cA57F4C223bC2a64028c418060C519"
 
     async with crynux:
-        await crynux.deposit(address, 10, 100)
+        await crynux.deposit(address, 100)
 
 
 
