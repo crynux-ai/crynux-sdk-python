@@ -66,7 +66,6 @@ class Crynux(object):
         privkey: Optional[str] = None,
         chain_provider_path: Optional[str] = None,
         relay_url: Optional[str] = None,
-        token_contract_address: Optional[str] = None,
         node_contract_address: Optional[str] = None,
         task_contract_address: Optional[str] = None,
         qos_contract_address: Optional[str] = None,
@@ -77,7 +76,7 @@ class Crynux(object):
         gas_price: Optional[int] = None,
         max_fee_per_gas: Optional[int] = None,
         max_priority_fee_per_gas: Optional[int] = None,
-        contracts_timeout: float = 30,
+        contracts_timeout: int = 30,
         relay_timeout: float = 30,
         contracts: Optional[Contracts] = None,
         relay: Optional[Relay] = None,
@@ -117,9 +116,6 @@ class Crynux(object):
 
         default_contract_config = get_default_contract_config()
 
-        self.token_contract_address = (
-            token_contract_address or default_contract_config["token"]
-        )
         self.node_contract_address = (
             node_contract_address or default_contract_config["node"]
         )
@@ -170,7 +166,6 @@ class Crynux(object):
     async def init(self):
         if not self.contracts.initialized:
             await self.contracts.init(
-                token_contract_address=self.token_contract_address,
                 node_contract_address=self.node_contract_address,
                 task_contract_address=self.task_contract_address,
                 qos_contract_address=self.qos_contract_address,
@@ -193,22 +188,19 @@ class Crynux(object):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    async def deposit(self, address: str, eth: int, cnx: int, unit: str = "ether"):
+    async def deposit(self, address: str, amount: int, unit: str = "ether"):
         """
         deposit tokens to the address
 
         address: Address which deposit tokens to
-        eth: Eth tokens need to deposit, 0 means not to deposit eth
-        cnx: Cnx tokens need to deposit, 0 means not to deposit cnx
+        amount: Tokens need to deposit, 0 means not to deposit eth
         unit: The unit for eth and cnx tokens, default to "ether"
         """
         assert self._initialized, "Crynux sdk hasn't been initialized"
         assert not self._closed, "Crynux sdk has been closed"
 
-        eth_wei = Web3.to_wei(eth, unit)
-        await self.token.transfer_eth(address=address, eth=eth_wei)
-        cnx_wei = Web3.to_wei(cnx, unit)
-        await self.token.transfer_cnx(address=address, cnx=cnx_wei)
+        eth_wei = Web3.to_wei(amount, unit)
+        await self.token.transfer(address=address, amount=eth_wei)
 
     async def generate_images(
         self,
