@@ -93,14 +93,11 @@ class Task(object):
                 _logger.info(f"create {str(task_type)} type task {task_id}")
 
         # sleep to wait the relay server to receive TaskPending event
-        await sleep(2)
+        await sleep(5)
 
         def need_retry(exc: BaseException) -> bool:
             if isinstance(exc, RelayError):
-                if (
-                    exc.status_code == 400
-                    and exc.message == "Task not found on the Blockchain"
-                ):
+                if exc.status_code == 400:
                     return True
                 else:
                     return False
