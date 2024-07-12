@@ -1,12 +1,17 @@
 import logging
-import ssl
+from datetime import datetime
 from enum import IntEnum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, cast
 
+from anyio import create_memory_object_stream, create_task_group
+from anyio.abc import ObjectReceiveStream, ObjectSendStream
 from eth_typing import ChecksumAddress
-from web3.logs import WARN
+from hexbytes import HexBytes
+from web3.contract.async_contract import AsyncContractEvent
+from web3.logs import DISCARD, WARN
 from web3.providers.async_base import AsyncBaseProvider
-from web3.types import TxParams, TxReceipt
+from web3.types import (BlockData, BlockIdentifier, EventData, TxParams,
+                        TxReceipt)
 
 from crynux_sdk.config import TxOption
 
@@ -198,6 +203,15 @@ class Contracts(object):
         else:
             raise ValueError(f"unknown contract name {name}")
 
+    async def get_block(self, block_identifier: BlockIdentifier) -> BlockData:
+        async with await self._w3_pool.get() as w3:
+            return await w3.eth.get_block(block_identifier)
+
+    async def get_tx_receipt(self, tx_hash: HexBytes) -> TxReceipt:
+        async with await self._w3_pool.get() as w3:
+            receipt = await w3.eth.get_transaction_receipt(tx_hash)
+            return receipt
+
     async def get_events(
         self,
         contract_name: str,
@@ -205,14 +219,93 @@ class Contracts(object):
         filter_args: Optional[Dict[str, Any]] = None,
         from_block: Optional[int] = None,
         to_block: Optional[int] = None,
+        concurrency: int = 4,
     ):
-        contract = self.get_contract(contract_name)
-        return await contract.get_events(
-            event_name=event_name,
-            filter_args=filter_args,
-            from_block=from_block,
-            to_block=to_block,
-        )
+        async with await self._w3_pool.get() as w3:
+            contract = self.get_contract(contract_name)
+            c = w3.eth.contract(address=contract.address, abi=contract.abi)
+            event = c.events[event_name]()
+            event = cast(AsyncContractEvent, event)
+
+            if from_block is None or to_block is None:
+                current_blocknum = await w3.eth.get_block_number()
+                if from_block is None:
+                    from_block = current_blocknum
+                if to_block is None:
+                    to_block = current_blocknum
+
+
+            async def _process_block(block_receiver: ObjectReceiveStream[int], tx_sender: ObjectSendStream[HexBytes]):
+                async with block_receiver, tx_sender:
+                    async for blocknum in block_receiver:
+                        block = await w3.eth.get_block(blocknum)
+                        assert "transactions" in block
+                        for tx_hash in block["transactions"]:
+                            assert isinstance(tx_hash, bytes)
+                            await tx_sender.send(tx_hash)
+                        assert "timestamp" in block
+                        blocktime = datetime.fromtimestamp(
+                            block["timestamp"]
+                        ).strftime("%Y-%m-%d %H:%M:%S")
+                        tx_count = len(block["transactions"])
+                        _logger.debug(
+                            f"block {blocknum} produced at {blocktime}, {tx_count} txs"
+                        )
+
+
+            async def _process_tx_receipts(tx_receiver: ObjectReceiveStream[HexBytes], event_sender: ObjectSendStream[EventData]):
+                async with tx_receiver, event_sender:
+                    async for tx_hash in tx_receiver:
+                        tx_receipt = await w3.eth.get_transaction_receipt(tx_hash)
+                        event_datas = event.process_receipt(tx_receipt, errors=DISCARD)
+                        for event_data in event_datas:
+                            await event_sender.send(event_data)
+                        blocknum = tx_receipt["blockNumber"]
+                        tx_index = tx_receipt["transactionIndex"]
+                        _logger.debug(
+                            f"process receipt {tx_index} of block {blocknum}"
+                        )
+
+            
+            def _filter_event(
+                    event: EventData, filter_args: Optional[Dict[str, Any]] = None
+                ) -> bool:
+                    if filter_args is None:
+                        return True
+                    for key, val in filter_args.items():
+                        if key in event["args"]:
+                            real_val = event["args"][key]
+                            if real_val != val:
+                                return False
+                    return True
+
+            results: List[EventData] = []
+            async with create_task_group() as tg:
+                block_sender, block_receiver = create_memory_object_stream(100, item_type=int)
+                tx_sender, tx_receiver = create_memory_object_stream(100, item_type=HexBytes)
+                event_sender, event_receiver = create_memory_object_stream(100, item_type=EventData)
+
+                for _ in range(concurrency):
+                    tg.start_soon(_process_tx_receipts, tx_receiver.clone(), event_sender.clone())
+                tx_receiver.close()
+                event_sender.close()
+
+                for _ in range(concurrency):
+                    tg.start_soon(_process_block, block_receiver.clone(), tx_sender.clone())
+                block_receiver.close()
+                tx_sender.close()
+
+                async with block_sender:
+                    for blocknum in range(from_block, to_block + 1):
+                        await block_sender.send(blocknum)
+                
+                async with event_receiver:
+                    async for event_data in event_receiver:
+                        if _filter_event(event_data, filter_args):
+                            results.append(event_data)
+            
+            return results
+
 
     async def event_process_receipt(
         self, contract_name: str, event_name: str, recepit: TxReceipt, errors=WARN

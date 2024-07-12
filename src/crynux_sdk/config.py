@@ -29,7 +29,7 @@ def get_default_contract_config():
 
 
 def get_default_provider_path() -> str:
-    return "https://json-rpc.crynux.evm.ra.blumbus.noisnemyd.xyz/"
+    return "https://crynux-testnet.public.blastapi.io"
 
 
 def get_default_relay_url() -> str:

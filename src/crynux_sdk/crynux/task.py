@@ -165,77 +165,91 @@ class Task(object):
         self, task_id: int, from_block: int, interval: int
     ) -> Tuple[int, HexBytes, TaskStarted]:
         while True:
-            events = await self._contracts.get_events(
-                contract_name="task",
-                event_name="TaskStarted",
-                from_block=from_block,
-            )
-            for event in events:
-                res = load_event_from_contracts(event)
-                assert isinstance(res, TaskStarted)
-                if res.task_id == task_id:
-                    return event["blockNumber"], event["transactionHash"], res
+            to_block = await self._contracts.get_current_block_number()
+            if from_block <= to_block:
+                events = await self._contracts.get_events(
+                    contract_name="task",
+                    event_name="TaskStarted",
+                    from_block=from_block,
+                    to_block=to_block,
+                    filter_args={"taskId": task_id}
+                )
+                if len(events) > 0:
+                    res = load_event_from_contracts(events[0])
+                    assert isinstance(res, TaskStarted)
+                    assert res.task_id == task_id
+                    return events[0]["blockNumber"], events[0]["transactionHash"], res
 
-                if event["blockNumber"] > from_block:
-                    from_block = event["blockNumber"]
-
+                from_block = to_block + 1
             await sleep(interval)
 
     async def wait_task_success(
         self, task_id: int, from_block: int, interval: int
     ) -> Tuple[int, HexBytes, TaskSuccess]:
         while True:
-            events = await self._contracts.get_events(
-                contract_name="task",
-                event_name="TaskSuccess",
-                filter_args={"taskId": task_id},
-                from_block=from_block,
-            )
-            if len(events) > 0:
-                res = load_event_from_contracts(events[0])
-                assert isinstance(res, TaskSuccess)
-                assert res.task_id == task_id
-                _logger.info(f"task {task_id} success")
-                return events[0]["blockNumber"], events[0]["transactionHash"], res
+            to_block = await self._contracts.get_current_block_number()
+            if from_block <= to_block:
+                events = await self._contracts.get_events(
+                    contract_name="task",
+                    event_name="TaskSuccess",
+                    filter_args={"taskId": task_id},
+                    from_block=from_block,
+                    to_block=to_block,
+                )
+                if len(events) > 0:
+                    res = load_event_from_contracts(events[0])
+                    assert isinstance(res, TaskSuccess)
+                    assert res.task_id == task_id
+                    _logger.info(f"task {task_id} success")
+                    return events[0]["blockNumber"], events[0]["transactionHash"], res
 
+                from_block = to_block + 1
             await sleep(interval)
 
     async def wait_task_aborted(
         self, task_id: int, from_block: int, interval: int
     ) -> Tuple[int, HexBytes, TaskAborted]:
         while True:
-            events = await self._contracts.get_events(
-                contract_name="task",
-                event_name="TaskAborted",
-                filter_args={"taskId": task_id},
-                from_block=from_block,
-            )
-            if len(events) > 0:
-                res = load_event_from_contracts(events[0])
-                assert isinstance(res, TaskAborted)
-                assert res.task_id == task_id
-                _logger.info(f"task {task_id} aborted, reason: {res.reason}")
-                return events[0]["blockNumber"], events[0]["transactionHash"], res
+            to_block = await self._contracts.get_current_block_number()
+            if from_block < to_block:
+                events = await self._contracts.get_events(
+                    contract_name="task",
+                    event_name="TaskAborted",
+                    filter_args={"taskId": task_id},
+                    from_block=from_block,
+                    to_block=to_block,
+                )
+                if len(events) > 0:
+                    res = load_event_from_contracts(events[0])
+                    assert isinstance(res, TaskAborted)
+                    assert res.task_id == task_id
+                    _logger.info(f"task {task_id} aborted, reason: {res.reason}")
+                    return events[0]["blockNumber"], events[0]["transactionHash"], res
 
+                from_block = to_block + 1
             await sleep(interval)
 
     async def wait_task_result_uploaded(
         self, task_id: int, from_block: int, interval: int
     ) -> Tuple[int, HexBytes, TaskResultUploaded]:
         while True:
-            events = await self._contracts.get_events(
-                contract_name="task",
-                event_name="TaskResultUploaded",
-                filter_args={"taskId": task_id},
-                from_block=from_block,
-            )
-            if len(events) > 0:
-                res = load_event_from_contracts(events[0])
-                assert isinstance(res, TaskResultUploaded)
-                assert res.task_id == task_id
-                _logger.info(f"task {task_id} result is uploaded")
-                return events[0]["blockNumber"], events[0]["transactionHash"], res
+            to_block = await self._contracts.get_current_block_number()
+            if from_block <= to_block:
+                events = await self._contracts.get_events(
+                    contract_name="task",
+                    event_name="TaskResultUploaded",
+                    filter_args={"taskId": task_id},
+                    from_block=from_block,
+                    to_block=to_block,
+                )
+                if len(events) > 0:
+                    res = load_event_from_contracts(events[0])
+                    assert isinstance(res, TaskResultUploaded)
+                    assert res.task_id == task_id
+                    _logger.info(f"task {task_id} result is uploaded")
+                    return events[0]["blockNumber"], events[0]["transactionHash"], res
 
+                from_block = to_block + 1
             await sleep(interval)
 
     async def wait_task_finish(self, task_id: int, from_block: int, interval: int = 1):

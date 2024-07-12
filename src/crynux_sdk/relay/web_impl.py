@@ -106,7 +106,7 @@ class WebRelay(Relay):
             f"/v1/inference_tasks/{task_id}/results/{index}",
             params={"timestamp": timestamp, "signature": signature},
         ) as resp:
-            resp = await _process_resp(resp, "getTask")
+            resp = await _process_resp(resp, "getResult")
             async for chunk in resp.content.iter_chunked(4096):
                 await async_dst.write(chunk)
 
