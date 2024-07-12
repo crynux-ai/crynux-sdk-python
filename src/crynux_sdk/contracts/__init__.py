@@ -212,28 +212,14 @@ class Contracts(object):
             receipt = await w3.eth.get_transaction_receipt(tx_hash)
             return receipt
 
-    async def get_events(
-        self,
-        contract_name: str,
-        event_name: str,
-        filter_args: Optional[Dict[str, Any]] = None,
-        from_block: Optional[int] = None,
-        to_block: Optional[int] = None,
-        concurrency: int = 4,
-    ):
+    async def get_tx_receipts(self, from_block: Optional[int] = None, to_block: Optional[int] = None, concurrency: int = 4):
         async with await self._w3_pool.get() as w3:
-            contract = self.get_contract(contract_name)
-            c = w3.eth.contract(address=contract.address, abi=contract.abi)
-            event = c.events[event_name]()
-            event = cast(AsyncContractEvent, event)
-
             if from_block is None or to_block is None:
                 current_blocknum = await w3.eth.get_block_number()
                 if from_block is None:
                     from_block = current_blocknum
                 if to_block is None:
                     to_block = current_blocknum
-
 
             async def _process_block(block_receiver: ObjectReceiveStream[int], tx_sender: ObjectSendStream[HexBytes]):
                 async with block_receiver, tx_sender:
@@ -252,43 +238,28 @@ class Contracts(object):
                             f"block {blocknum} produced at {blocktime}, {tx_count} txs"
                         )
 
-
-            async def _process_tx_receipts(tx_receiver: ObjectReceiveStream[HexBytes], event_sender: ObjectSendStream[EventData]):
-                async with tx_receiver, event_sender:
+            async def _process_tx_receipts(tx_receiver: ObjectReceiveStream[HexBytes], receipt_sender: ObjectSendStream[TxReceipt]):
+                async with tx_receiver, receipt_sender:
                     async for tx_hash in tx_receiver:
                         tx_receipt = await w3.eth.get_transaction_receipt(tx_hash)
-                        event_datas = event.process_receipt(tx_receipt, errors=DISCARD)
-                        for event_data in event_datas:
-                            await event_sender.send(event_data)
+                        await receipt_sender.send(tx_receipt)
                         blocknum = tx_receipt["blockNumber"]
                         tx_index = tx_receipt["transactionIndex"]
                         _logger.debug(
                             f"process receipt {tx_index} of block {blocknum}"
                         )
 
-            
-            def _filter_event(
-                    event: EventData, filter_args: Optional[Dict[str, Any]] = None
-                ) -> bool:
-                    if filter_args is None:
-                        return True
-                    for key, val in filter_args.items():
-                        if key in event["args"]:
-                            real_val = event["args"][key]
-                            if real_val != val:
-                                return False
-                    return True
+            results: List[TxReceipt] = []
 
-            results: List[EventData] = []
             async with create_task_group() as tg:
                 block_sender, block_receiver = create_memory_object_stream(100, item_type=int)
                 tx_sender, tx_receiver = create_memory_object_stream(100, item_type=HexBytes)
-                event_sender, event_receiver = create_memory_object_stream(100, item_type=EventData)
+                receipt_sender, receipt_receiver = create_memory_object_stream(100, item_type=TxReceipt)
 
                 for _ in range(concurrency):
-                    tg.start_soon(_process_tx_receipts, tx_receiver.clone(), event_sender.clone())
+                    tg.start_soon(_process_tx_receipts, tx_receiver.clone(), receipt_sender.clone())
                 tx_receiver.close()
-                event_sender.close()
+                receipt_sender.close()
 
                 for _ in range(concurrency):
                     tg.start_soon(_process_block, block_receiver.clone(), tx_sender.clone())
@@ -299,11 +270,47 @@ class Contracts(object):
                     for blocknum in range(from_block, to_block + 1):
                         await block_sender.send(blocknum)
                 
-                async with event_receiver:
-                    async for event_data in event_receiver:
-                        if _filter_event(event_data, filter_args):
-                            results.append(event_data)
+                async with receipt_receiver:
+                    async for receipt in receipt_receiver:
+                        results.append(receipt)
             
+            return results
+
+    async def get_events(
+        self,
+        contract_name: str,
+        event_name: str,
+        filter_args: Optional[Dict[str, Any]] = None,
+        from_block: Optional[int] = None,
+        to_block: Optional[int] = None,
+        concurrency: int = 4,
+    ):
+
+        def _filter_event(
+            event: EventData, filter_args: Optional[Dict[str, Any]] = None
+        ) -> bool:
+            if filter_args is None:
+                return True
+            for key, val in filter_args.items():
+                if key in event["args"]:
+                    real_val = event["args"][key]
+                    if real_val != val:
+                        return False
+            return True
+    
+        tx_receipts = await self.get_tx_receipts(from_block=from_block, to_block=to_block, concurrency=concurrency)
+        async with await self._w3_pool.get() as w3:
+            contract = self.get_contract(contract_name)
+            c = w3.eth.contract(address=contract.address, abi=contract.abi)
+            event = c.events[event_name]()
+            event = cast(AsyncContractEvent, event)
+
+
+            results: List[EventData] = []
+            for receipt in tx_receipts:
+                for event_data in event.process_receipt(receipt, errors=DISCARD):
+                    if _filter_event(event_data, filter_args):
+                        results.append(event_data)
             return results
 
 
