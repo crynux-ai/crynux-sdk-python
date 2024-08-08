@@ -77,6 +77,8 @@ class Task(object):
                         vram_limit=vram_limit,
                         task_fee=task_fee,
                         cap=cap,
+                        gpu_name="",
+                        gpu_vram=0,
                         option=self._option,
                     )
                     receipt = await waiter.wait()
