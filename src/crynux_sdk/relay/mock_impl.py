@@ -1,6 +1,7 @@
 import os
 import shutil
 from contextlib import contextmanager
+from functools import partial
 from tempfile import mkdtemp
 from typing import BinaryIO, Dict, List, Optional
 
@@ -67,7 +68,11 @@ class MockRelay(Relay):
                     os.makedirs(task_dir, exist_ok=True)
 
                 dst_path = os.path.join(task_dir, "input_checkpoint")
-                await to_thread.run_sync(shutil.copytree, checkpoint_dir, dst_path)
+                await to_thread.run_sync(
+                    partial(
+                        shutil.copytree, checkpoint_dir, dst_path, dirs_exist_ok=True
+                    )
+                )
                 self.task_input_checkpoint[task_id] = dst_path
                 condition.notify()
 
@@ -77,15 +82,24 @@ class MockRelay(Relay):
             async with condition:
                 while task_id not in self.task_input_checkpoint:
                     await condition.wait()
-                
+
                 src_path = self.task_input_checkpoint[task_id]
-                await to_thread.run_sync(shutil.copytree, src_path, result_checkpoint_dir)
+                await to_thread.run_sync(
+                    partial(
+                        shutil.copytree,
+                        src_path,
+                        result_checkpoint_dir,
+                        dirs_exist_ok=True,
+                    )
+                )
 
     async def get_task(self, task_id: int) -> RelayTask:
         with self.wrap_error("getTask"):
             return self.tasks[task_id]
 
-    async def upload_task_result(self, task_id: int, file_paths: List[str], checkpoint_dir: Optional[str] = None):
+    async def upload_task_result(
+        self, task_id: int, file_paths: List[str], checkpoint_dir: Optional[str] = None
+    ):
         with self.wrap_error("uploadTaskResult"):
             condition = self.get_condition(task_id=task_id)
             async with condition:
@@ -105,7 +119,14 @@ class MockRelay(Relay):
                 if checkpoint_dir is not None:
                     dst_path = os.path.join(task_dir, "result_checkpoint")
 
-                    await to_thread.run_sync(shutil.copytree, checkpoint_dir, dst_path)
+                    await to_thread.run_sync(
+                        partial(
+                            shutil.copytree,
+                            checkpoint_dir,
+                            dst_path,
+                            dirs_exist_ok=True,
+                        )
+                    )
                     self.task_result_checkpoint[task_id] = dst_path
 
                 condition.notify()
@@ -134,7 +155,11 @@ class MockRelay(Relay):
 
             src_dir = self.task_result_checkpoint[task_id]
 
-            await to_thread.run_sync(shutil.copytree, src_dir, result_checkpoint_dir)
+            await to_thread.run_sync(
+                partial(
+                    shutil.copytree, src_dir, result_checkpoint_dir, dirs_exist_ok=True
+                )
+            )
 
     async def close(self):
         if not self._closed:

@@ -1,23 +1,31 @@
 from __future__ import annotations
 
 import logging
-import math
 import os
 import pathlib
 import shutil
 import tempfile
+from functools import partial
 from typing import List, Literal, Optional, Tuple, Union
 
 from anyio import fail_after, to_thread
-from tenacity import (AsyncRetrying, RetryCallState,
-                      retry_if_exception_cause_type, retry_if_exception_type,
-                      retry_if_not_exception_type, stop_after_attempt,
-                      wait_fixed)
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    retry_if_exception_cause_type,
+    retry_if_exception_type,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_fixed,
+)
 from web3 import Web3
 
-from crynux_sdk.config import (get_default_contract_config,
-                               get_default_provider_path,
-                               get_default_relay_url, get_default_tx_option)
+from crynux_sdk.config import (
+    get_default_contract_config,
+    get_default_provider_path,
+    get_default_relay_url,
+    get_default_tx_option,
+)
 from crynux_sdk.contracts import Contracts, TxRevertedError
 from crynux_sdk.models import sd_args
 from crynux_sdk.models.contracts import TaskType
@@ -670,7 +678,12 @@ class Crynux(object):
                 finish_file = os.path.join(result_checkpoint, "FINISH")
                 if os.path.exists(finish_file):
                     await to_thread.run_sync(
-                        shutil.copytree, result_checkpoint, result_checkpoint_path
+                        partial(
+                            shutil.copytree,
+                            result_checkpoint,
+                            result_checkpoint_path,
+                            dirs_exist_ok=True,
+                        )
                     )
                     break
 
