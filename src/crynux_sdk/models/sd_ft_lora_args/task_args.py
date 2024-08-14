@@ -4,6 +4,7 @@ from typing_extensions import Annotated
 from annotated_types import Ge, Gt, MinLen, Le
 from pydantic import BaseModel
 
+from ..types import VersionString
 
 class TransformArgs(BaseModel):
     center_crop: bool = False
@@ -86,3 +87,5 @@ class FinetuneLoraTaskArgs(BaseModel):
     seed: int = 0
 
     checkpoint: Optional[Annotated[str, MinLen(1)]] = None
+
+    version: VersionString = VersionString.V2_1_0

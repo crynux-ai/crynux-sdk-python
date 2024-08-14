@@ -1,4 +1,4 @@
-from enum import Enum, IntEnum
+from enum import IntEnum
 from typing import List
 
 from pydantic import BaseModel
@@ -7,7 +7,7 @@ from pydantic import BaseModel
 class TaskType(IntEnum):
     SD = 0
     LLM = 1
-    SD_FT = 2
+    SD_FT_LORA = 2
 
 class ChainTask(BaseModel):
     id: int

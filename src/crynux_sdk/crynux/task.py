@@ -17,7 +17,7 @@ from hexbytes import HexBytes
 
 from crynux_sdk.config import TxOption
 from crynux_sdk.contracts import Contracts, TxRevertedError
-from crynux_sdk.models import sd_args, sd_ft_args
+from crynux_sdk.models import sd_args, sd_ft_lora_args
 from crynux_sdk.models.contracts import (
     TaskAborted,
     TaskResultUploaded,
@@ -221,11 +221,11 @@ class Task(object):
         checkpoint: Optional[str] = None,
         max_retries: int = 5,
     ):
-        task_args = sd_ft_args.FinetuneLoraTaskArgs(
-            model=sd_ft_args.ModelArgs(name=model_name, variant=model_variant, revision=model_revision),
-            dataset=sd_ft_args.DatasetArgs(name=dataset_name, config_name=dataset_config_name, image_column=dataset_image_column, caption_column=dataset_caption_column),
-            validation=sd_ft_args.ValidationArgs(prompt=validation_prompt, num_images=validation_num_images),
-            train_args=sd_ft_args.TrainArgs(
+        task_args = sd_ft_lora_args.FinetuneLoraTaskArgs(
+            model=sd_ft_lora_args.ModelArgs(name=model_name, variant=model_variant, revision=model_revision),
+            dataset=sd_ft_lora_args.DatasetArgs(name=dataset_name, config_name=dataset_config_name, image_column=dataset_image_column, caption_column=dataset_caption_column),
+            validation=sd_ft_lora_args.ValidationArgs(prompt=validation_prompt, num_images=validation_num_images),
+            train_args=sd_ft_lora_args.TrainArgs(
                 learning_rate=learning_rate,
                 batch_size=batch_size,
                 gradient_accumulation_steps=gradient_accumulation_steps,
@@ -239,13 +239,13 @@ class Task(object):
                 resolution=resolution,
                 noise_offset=noise_offset,
                 snr_gamma=snr_gamma,
-                lr_scheduler=sd_ft_args.LRSchedulerArgs(lr_scheduler=lr_scheduler, lr_warmup_steps=lr_warmup_steps),
-                adam_args=sd_ft_args.AdamOptimizerArgs(
+                lr_scheduler=sd_ft_lora_args.LRSchedulerArgs(lr_scheduler=lr_scheduler, lr_warmup_steps=lr_warmup_steps),
+                adam_args=sd_ft_lora_args.AdamOptimizerArgs(
                     beta1=adam_beta1, beta2=adam_beta2, weight_decay=adam_weight_decay, epsilon=adam_epsilon,
                 )
             ),
-            transforms=sd_ft_args.TransformArgs(center_crop=center_crop, random_flip=random_flip),
-            lora=sd_ft_args.LoraArgs(rank=rank, init_lora_weights=init_lora_weights, target_modules=target_modules),
+            transforms=sd_ft_lora_args.TransformArgs(center_crop=center_crop, random_flip=random_flip),
+            lora=sd_ft_lora_args.LoraArgs(rank=rank, init_lora_weights=init_lora_weights, target_modules=target_modules),
             dataloader_num_workers=dataloader_num_workers,
             mixed_precision=mixed_precision,
             seed=seed,
@@ -254,7 +254,7 @@ class Task(object):
         task_args_str = task_args.model_dump_json()
         blocknum, tx_hash, task_id = await self._create_task(
             task_args=task_args_str,
-            task_type=TaskType.SD_FT,
+            task_type=TaskType.SD_FT_LORA,
             task_fee=task_fee,
             vram_limit=gpu_vram,
             cap=1,
