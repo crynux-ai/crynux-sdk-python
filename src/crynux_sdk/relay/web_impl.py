@@ -8,7 +8,7 @@ from typing import BinaryIO, List, Optional
 
 import certifi
 from aiohttp import (ClientResponse, ClientResponseError, ClientSession,
-                     ClientTimeout, TCPConnector)
+                     ClientTimeout, TCPConnector, FormData)
 from anyio import open_file, to_thread, wrap_file
 
 from crynux_sdk.models.relay import RelayTask
@@ -75,12 +75,14 @@ class WebRelay(Relay):
             with ExitStack() as stack:
                 filename = os.path.basename(checkpoint_file)
                 file_obj = stack.enter_context(open(checkpoint_file, "rb"))
-                files = [("checkpoint", (filename, file_obj))]
 
+                data = FormData()
+                data.add_field("timestamp", timestamp)
+                data.add_field("signature", signature)
+                data.add_field("checkpoint", file_obj, filename=filename)
                 async with await self.client.post(
                     f"/v1/inference_tasks/{task_id}/checkpoint",
-                    data={"timestamp": timestamp, "signature": signature},
-                    files=files,
+                    data=data,
                     timeout=None,
                 ) as resp:
                     resp = await _process_resp(resp, "uploadCheckpoint")
@@ -126,11 +128,11 @@ class WebRelay(Relay):
         timestamp, signature = self.signer.sign(input)
 
         with ExitStack() as stack:
-            files = []
+            data = FormData()
             for file_path in file_paths:
                 filename = os.path.basename(file_path)
                 file_obj = stack.enter_context(open(file_path, "rb"))
-                files.append(("images", (filename, file_obj)))
+                data.add_field("images", file_obj, filename=filename)
 
             if checkpoint_dir is not None:
                 tmp_dir = stack.enter_context(tempfile.TemporaryDirectory())
@@ -138,13 +140,14 @@ class WebRelay(Relay):
                 await to_thread.run_sync(shutil.make_archive, checkpoint_file[:-4], "zip", checkpoint_dir)
                 filename = os.path.basename(checkpoint_file)
                 file_obj = stack.enter_context(open(checkpoint_file, "rb"))
-                files.append(("checkpoint", (filename, file_obj)))
+                data.add_field("checkpoint", file_obj, filename=filename)
 
+            data.add_field("timestamp", timestamp)
+            data.add_field("signature", signature)
             # disable timeout because there may be many images or image size may be very large
             async with await self.client.post(
                 f"/v1/inference_tasks/{task_id}/results",
-                data={"timestamp": timestamp, "signature": signature},
-                files=files,
+                data=data,
                 timeout=None,
             ) as resp:
                 resp = await _process_resp(resp, "uploadTaskResult")
