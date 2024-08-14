@@ -77,7 +77,7 @@ class WebRelay(Relay):
                 file_obj = stack.enter_context(open(checkpoint_file, "rb"))
 
                 data = FormData()
-                data.add_field("timestamp", timestamp)
+                data.add_field("timestamp", str(timestamp))
                 data.add_field("signature", signature)
                 data.add_field("checkpoint", file_obj, filename=filename)
                 async with await self.client.post(
@@ -142,7 +142,7 @@ class WebRelay(Relay):
                 file_obj = stack.enter_context(open(checkpoint_file, "rb"))
                 data.add_field("checkpoint", file_obj, filename=filename)
 
-            data.add_field("timestamp", timestamp)
+            data.add_field("timestamp", str(timestamp))
             data.add_field("signature", signature)
             # disable timeout because there may be many images or image size may be very large
             async with await self.client.post(
