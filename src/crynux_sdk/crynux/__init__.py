@@ -643,7 +643,10 @@ class Crynux(object):
                 _logger.error(msg)
 
         task_num = 0
-        input_checkpoint = str(input_checkpoint_path)
+        if input_checkpoint_path is not None:
+            input_checkpoint = str(input_checkpoint_path)
+        else:
+            input_checkpoint = None
         task_ids = []
         start_blocknums = []
         with tempfile.TemporaryDirectory() as tmp_dir:
