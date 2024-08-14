@@ -53,7 +53,7 @@ class Task(object):
         cap: int,
         gpu_name: str,
         gpu_vram: int,
-        checkpoint_dir: str = "",
+        checkpoint_dir: Optional[str] = None,
         max_retries: int = 5,
     ) -> Tuple[int, HexBytes, int]:
         task_id: int = 0
@@ -261,6 +261,7 @@ class Task(object):
             gpu_name=gpu_name,
             gpu_vram=gpu_vram,
             max_retries=max_retries,
+            checkpoint_dir=checkpoint,
         )
         return blocknum, tx_hash, task_id, 1
 
