@@ -1,19 +1,31 @@
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
-from typing import List, Optional, Union, Tuple
+import shutil
+import tempfile
+from functools import partial
+from typing import List, Literal, Optional, Tuple, Union
 
-from anyio import fail_after
-from tenacity import (AsyncRetrying, RetryCallState,
-                      retry_if_exception_cause_type, retry_if_exception_type,
-                      retry_if_not_exception_type, stop_after_attempt,
-                      wait_fixed)
+from anyio import fail_after, to_thread
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    retry_if_exception_cause_type,
+    retry_if_exception_type,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_fixed,
+)
 from web3 import Web3
 
-from crynux_sdk.config import (get_default_contract_config,
-                               get_default_provider_path,
-                               get_default_relay_url, get_default_tx_option)
+from crynux_sdk.config import (
+    get_default_contract_config,
+    get_default_provider_path,
+    get_default_relay_url,
+    get_default_tx_option,
+)
 from crynux_sdk.contracts import Contracts, TxRevertedError
 from crynux_sdk.models import sd_args
 from crynux_sdk.models.contracts import TaskType
@@ -296,7 +308,9 @@ class Crynux(object):
                                 from_block=blocknum,
                                 interval=wait_interval,
                             )
-                    _logger.debug(f"task {task_id} finish successfully at tx {tx_hash.hex()}")
+                    _logger.debug(
+                        f"task {task_id} finish successfully at tx {tx_hash.hex()}"
+                    )
                     task_success = True
 
                     async for attemp in AsyncRetrying(
@@ -305,12 +319,18 @@ class Crynux(object):
                         reraise=True,
                     ):
                         with attemp:
-                            blocknum, tx_hash, _, = await self.task.wait_task_result_uploaded(
+                            (
+                                blocknum,
+                                tx_hash,
+                                _,
+                            ) = await self.task.wait_task_result_uploaded(
                                 task_id=task_id,
                                 from_block=blocknum,
                                 interval=wait_interval,
                             )
-                    _logger.debug(f"result of task {task_id} is uploaded at tx {tx_hash.hex()}")
+                    _logger.debug(
+                        f"result of task {task_id} is uploaded at tx {tx_hash.hex()}"
+                    )
 
                     files: List[pathlib.Path] = []
                     async for attemp in AsyncRetrying(
@@ -392,3 +412,356 @@ class Crynux(object):
             with attemp:
                 res = await _run_task()
         return res
+
+    async def finetune_sd_lora(
+        self,
+        result_checkpoint_path: Union[str, pathlib.Path],
+        task_fee: int,
+        gpu_name: str,
+        gpu_vram: int,
+        model_name: str,
+        dataset_name: str,
+        model_variant: Optional[str] = None,
+        model_revision: str = "main",
+        dataset_config_name: Optional[str] = None,
+        dataset_image_column: str = "image",
+        dataset_caption_column: str = "text",
+        validation_prompt: Optional[str] = None,
+        validation_num_images: int = 4,
+        center_crop: bool = False,
+        random_flip: bool = False,
+        rank: int = 8,
+        init_lora_weights: Union[bool, Literal["gaussian", "loftq"]] = True,
+        target_modules: Union[List[str], str, None] = None,
+        learning_rate: float = 1e-4,
+        batch_size: int = 16,
+        gradient_accumulation_steps: int = 1,
+        prediction_type: Optional[Literal["epsilon", "v_prediction"]] = None,
+        max_grad_norm: float = 1.0,
+        num_train_epochs: int = 1,
+        num_train_steps: Optional[int] = None,
+        max_train_epochs: int = 1,
+        max_train_steps: Optional[int] = None,
+        scale_lr: bool = True,
+        resolution: int = 512,
+        noise_offset: float = 0,
+        snr_gamma: Optional[float] = None,
+        lr_scheduler: Literal[
+            "linear",
+            "cosine",
+            "cosine_with_restarts",
+            "polynomial",
+            "constant",
+            "constant_with_warmup",
+        ] = "constant",
+        lr_warmup_steps: int = 500,
+        adam_beta1: float = 0.9,
+        adam_beta2: float = 0.999,
+        adam_weight_decay: float = 1e-2,
+        adam_epsilon: float = 1e-8,
+        dataloader_num_workers: int = 0,
+        mixed_precision: Literal["no", "fp16", "bf16"] = "no",
+        seed: int = 0,
+        input_checkpoint_path: Union[str, pathlib.Path, None] = None,
+        task_fee_unit: str = "ether",
+        max_retries: int = 5,
+        max_timeout_retries: int = 3,
+        timeout: Optional[float] = None,
+        wait_interval: int = 1,
+        auto_cancel: bool = True,
+    ):
+        """
+        Finetune a lora model for stable diffusion by crynux network.
+        Due to the training time of whole task may be very long, this task will split the whole task
+        into several sub-task to perform.
+
+        result_checkpoint_path: Should be a string or a pathlib.Path. The directory where the result checkpoint files are stored. 
+                                The result lora weight file is `pytorch_lora_weights.safetensors`.
+        task_fee: The cnx tokens you paid for each finetune task, should be an int.
+                  You account must have enough cnx tokens before you call this method,
+                  or it will failed.
+        gpu_name: The specified GPU name to run this finetune task, should be a string.
+        gpu_vram: The specified GPU VRAM size to run this finetune task, should be an int, in unit GB.
+        model_name: The pretrained stable diffusion model to finetune, should be a model identifier from huggingface.co/models.
+        dataset_name: The name of the Dataset (from the HuggingFace hub) to train on, should be a string.
+        model_variant: Variant of the model files of the pretrained model identifier from huggingface.co/models, 
+                       default is None, means no variant.
+        model_revision: Revision of pretrained model identifier from huggingface.co/models, default is main.
+        dataset_config_name: The config of the Dataset, default is None means there's only one config.
+        dataset_image_column: The column of the dataset containing an image, should be a string, default is 'image'.
+        dataset_caption_column: The column of the dataset containing a caption or a list of captions, should be a string, 
+                                default is 'text'.
+        validation_prompt: A prompt that is used for validation inference during training, should be a string or None.
+                           Default is None, means the the prompt is sampled from dataset.
+        validation_num_images: Number of images that should be generated during validation, should be an int, in range [1, 10].
+        center_crop: Whether to center crop the input images to the resolution. If not set, the images will be randomly cropped.
+                     Default is false.
+        random_flip: Whether to randomly flip images horizontally. Default is false.
+        rank: Lora attention dimension, should be an int, default is 8.
+        init_lora_weights: How to initialize the weights of the LoRA layers.Passing True (default) results in the default 
+                           initialization from the reference implementation from Microsoft. Passing 'gaussian' results 
+                           in Gaussian initialization scaled by the LoRA rank for linear and layers. Setting the initialization
+                           to False leads to completely random initialization and is discouraged. 
+                           Pass 'loftq' to use LoftQ initialization.
+        target_modules: List of module names or regex expression of the module names to replace with Lora.
+        learning_rate: Initial learning rate to use. Default is 1e-4.
+        batch_size: Batch size for the training dataloader. Default is 16.
+        gradient_accumulation_steps: Number of updates steps to accumulate before performing a backward/update pass. Default is 1.
+        prediction_type: The prediction_type that shall be used for training. 
+                         Choose between 'epsilon' or 'v_prediction' or leave `None`. 
+                         If left to `None` the default prediction type of the scheduler: 
+                         `noise_scheduler.config.prediction_type` is chosen. Default is None.
+        max_grad_norm: Max gradient norm. Default is 1.0.
+        num_train_epochs: Number of training epochs to perform in one task. Default is 1.
+        num_train_steps: Number of training steps to perform in one task. Should be an int or None. 
+                         Default is None. If not None, overrides 'num_train_epochs'.
+        max_train_epochs: Total number of training epochs to perform. Default is 1.
+        max_train_steps: Total number of training steps to perform. Should be an int or None. 
+                         Default is None. If not None, overrides 'max_train_epochs'.
+        scale_lr: Whether to scale the learning rate by the number of gradient accumulation steps, and batch size. Default is true.
+        resolution: The resolution for input images, all the images in the train/validation dataset will be resized to this resolution.
+                    Default is 512.
+        noise_offset: The scale of noise offset. Default is 0.
+        snr_gamma: SNR weighting gamma to be used if rebalancing the loss. Recommended value is 5.0. Default is None, 
+                   means to disable rebalancing the loss.
+        lr_scheduler: The scheduler type to use. Choose between ["linear", "cosine", "cosine_with_restarts", "polynomial",
+                      "constant", "constant_with_warmup"]. Default is "constant".
+        lr_warmup_steps: Number of steps for the warmup in the lr scheduler. Default is 500.
+        adam_beta1: The beta1 parameter for the Adam optimizer. Default is 0.9.
+        adam_beta2: The beta2 parameter for the Adam optimizer. Default is 0.999.
+        adam_weight_decay: Weight decay to use. Default is 1e-2.
+        adam_epsilon: Epsilon value for the Adam optimizer. Default is 1e-8.
+        dataloader_num_workers: Number of subprocesses to use for data loading. 0 means that the data will be loaded in the main process.
+                                Default is 0.
+        mixed_precision: Whether to use mixed precision. Choose between fp16 and bf16 (bfloat16). 
+                         Default is 'no', means disable mixed precision.
+        seed: A seed for reproducible training. Default is 0.
+        input_checkpoint_path: Whether training should be resumed from a previous checkpoint. Should be a path of the previous checkpoint.
+                               Default is None, means no previous checkpoint.
+        task_fee_unit: The unit for task fee, default to "ether".
+        max_retries: Max retry counts when face network issues, default to 5 times.
+        max_timeout_retries: Max retry counts when cannot result images after timeout, default to 3 times.
+        timeout: The timeout for image generation in seconds. Default to None, means no timeout.
+        wait_interval: The interval in seconds for checking crynux contracts events. Default to 1 second.
+        auto_cancel: Whether to cancel the timeout image generation task automatically. Default to True.
+        """
+
+        assert self._initialized, "Crynux sdk hasn't been initialized"
+        assert not self._closed, "Crynux sdk has been closed"
+
+        task_fee = Web3.to_wei(task_fee, task_fee_unit)
+
+        async def _run_task(
+            result_checkpoint: str, input_checkpoint: Optional[str] = None
+        ):
+            task_id = 0
+            start_blocknum = 0
+            task_created = False
+            task_success = False
+            try:
+                with fail_after(timeout):
+                    blocknum, tx_hash, task_id, cap = (
+                        await self.task.create_sd_finetune_lora_task(
+                            task_fee=task_fee,
+                            gpu_name=gpu_name,
+                            gpu_vram=gpu_vram,
+                            model_name=model_name,
+                            dataset_name=dataset_name,
+                            model_variant=model_variant,
+                            model_revision=model_revision,
+                            dataset_config_name=dataset_config_name,
+                            dataset_image_column=dataset_image_column,
+                            dataset_caption_column=dataset_caption_column,
+                            validation_prompt=validation_prompt,
+                            validation_num_images=validation_num_images,
+                            center_crop=center_crop,
+                            random_flip=random_flip,
+                            rank=rank,
+                            init_lora_weights=init_lora_weights,
+                            target_modules=target_modules,
+                            learning_rate=learning_rate,
+                            batch_size=batch_size,
+                            gradient_accumulation_steps=gradient_accumulation_steps,
+                            prediction_type=prediction_type,
+                            max_grad_norm=max_grad_norm,
+                            num_train_epochs=num_train_epochs,
+                            num_train_steps=num_train_steps,
+                            max_train_epochs=max_train_epochs,
+                            max_train_steps=max_train_steps,
+                            scale_lr=scale_lr,
+                            resolution=resolution,
+                            noise_offset=noise_offset,
+                            snr_gamma=snr_gamma,
+                            lr_scheduler=lr_scheduler,
+                            lr_warmup_steps=lr_warmup_steps,
+                            adam_beta1=adam_beta1,
+                            adam_beta2=adam_beta2,
+                            adam_weight_decay=adam_weight_decay,
+                            adam_epsilon=adam_epsilon,
+                            dataloader_num_workers=dataloader_num_workers,
+                            mixed_precision=mixed_precision,
+                            seed=seed,
+                            checkpoint=input_checkpoint,
+                            max_retries=max_retries,
+                        )
+                    )
+                    task_created = True
+                    _logger.debug(f"task {task_id} is created at tx {tx_hash.hex()}")
+
+                    async for attemp in AsyncRetrying(
+                        wait=wait_fixed(2),
+                        stop=stop_after_attempt(max_retries),
+                        retry=retry_if_not_exception_type(TaskAbortedError),
+                        reraise=True,
+                    ):
+                        with attemp:
+                            blocknum, tx_hash, _ = await self.task.wait_task_started(
+                                task_id=task_id,
+                                from_block=blocknum,
+                                interval=wait_interval,
+                            )
+                    start_blocknum = blocknum
+                    _logger.debug(f"task {task_id} starts at tx {tx_hash.hex()}")
+                    _logger.info(f"task {task_id} starts")
+
+                    _logger.info(f"waiting task {task_id} to complete")
+                    async for attemp in AsyncRetrying(
+                        wait=wait_fixed(2),
+                        stop=stop_after_attempt(max_retries),
+                        retry=retry_if_not_exception_type(TaskAbortedError),
+                        reraise=True,
+                    ):
+                        with attemp:
+                            blocknum, tx_hash, _ = await self.task.wait_task_finish(
+                                task_id=task_id,
+                                from_block=blocknum,
+                                interval=wait_interval,
+                            )
+                    _logger.debug(
+                        f"task {task_id} finish successfully at tx {tx_hash.hex()}"
+                    )
+                    task_success = True
+
+                    async for attemp in AsyncRetrying(
+                        wait=wait_fixed(2),
+                        stop=stop_after_attempt(max_retries),
+                        reraise=True,
+                    ):
+                        with attemp:
+                            (
+                                blocknum,
+                                tx_hash,
+                                _,
+                            ) = await self.task.wait_task_result_uploaded(
+                                task_id=task_id,
+                                from_block=blocknum,
+                                interval=wait_interval,
+                            )
+                    _logger.debug(
+                        f"result of task {task_id} is uploaded at tx {tx_hash.hex()}"
+                    )
+
+                    async for attemp in AsyncRetrying(
+                        wait=wait_fixed(2),
+                        stop=stop_after_attempt(max_retries),
+                        reraise=True,
+                    ):
+                        with attemp:
+                            await self.task.get_task_result_checkpoint(
+                                task_id=task_id, checkpoint_dir=result_checkpoint
+                            )
+                    return task_id, start_blocknum
+
+            except TimeoutError as timeout_exc:
+                if auto_cancel and task_id > 0 and task_created:
+                    if not task_success:
+                        _logger.error(
+                            f"task {task_id} is not successful after {timeout} seconds"
+                        )
+                        _logger.info(f"try to cancel task {task_id}")
+                        # try cancel the task
+                        try:
+                            async for attemp in AsyncRetrying(
+                                wait=wait_fixed(2),
+                                stop=stop_after_attempt(max_retries),
+                                retry=retry_if_not_exception_type(TxRevertedError),
+                                reraise=True,
+                            ):
+                                with attemp:
+                                    await self.task.cancel_task(task_id=task_id)
+                                    _logger.info(f"cancel task {task_id} successfully")
+                        except TxRevertedError as e:
+                            _logger.error(
+                                f"cannot cancel task {task_id} due to tx reverted: {e.reason}"
+                            )
+                            raise TaskCancelError(
+                                task_id=task_id, reason=e.reason
+                            ) from timeout_exc
+                        except Exception as e:
+                            _logger.error(
+                                f"cannot cancel task {task_id} due to {str(e)}"
+                            )
+                            raise TaskCancelError(
+                                task_id=task_id, reason=str(e)
+                            ) from timeout_exc
+                        raise timeout_exc
+                    else:
+                        e = TaskGetResultTimeout(task_id=task_id)
+                        _logger.error(str(e))
+                        raise TaskGetResultTimeout(task_id=task_id) from timeout_exc
+                else:
+                    raise timeout_exc
+
+        def _log_before_retry(retry_state: RetryCallState):
+            if retry_state.outcome is not None and retry_state.outcome.failed:
+                exc: Exception = retry_state.outcome.exception()
+                if isinstance(exc, TaskAbortedError):
+                    msg = f"image generation failed due to {exc.reason}, "
+                else:
+                    msg = f"image generation doesn't complete in {timeout} seconds, "
+
+                retry_times = max_timeout_retries - retry_state.attempt_number
+                msg += (
+                    f"retry the image generation, remaining retring times {retry_times}"
+                )
+                _logger.error(msg)
+
+        task_num = 0
+        if input_checkpoint_path is not None:
+            input_checkpoint = str(input_checkpoint_path)
+        else:
+            input_checkpoint = None
+        task_ids = []
+        start_blocknums = []
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            while True:
+                result_checkpoint = os.path.join(tmp_dir, f"checkpoint-{task_num}")
+                async for attemp in AsyncRetrying(
+                    wait=wait_fixed(2),
+                    stop=stop_after_attempt(max_timeout_retries),
+                    retry=retry_if_exception_type((TaskAbortedError, TimeoutError))
+                    | retry_if_exception_cause_type(TimeoutError),
+                    before_sleep=_log_before_retry,
+                    reraise=True,
+                ):
+                    with attemp:
+                        task_id, start_blocknum = await _run_task(
+                            result_checkpoint, input_checkpoint
+                        )
+                        task_ids.append(task_id)
+                        start_blocknums.append(start_blocknum)
+
+                finish_file = os.path.join(result_checkpoint, "FINISH")
+                if os.path.exists(finish_file):
+                    await to_thread.run_sync(
+                        partial(
+                            shutil.copytree,
+                            result_checkpoint,
+                            result_checkpoint_path,
+                            dirs_exist_ok=True,
+                        )
+                    )
+                    break
+
+                input_checkpoint = result_checkpoint
+        return task_ids, start_blocknums
