@@ -36,7 +36,7 @@ class TaskConfig(BaseModel):
     # whether to enable safety checker
     safety_checker: bool = True
     # cfg of stable diffusion
-    cfg: Annotated[int, Gt(0), Le(20)] = 5
+    cfg: Annotated[int, Ge(0), Le(20)] = 5
 
 
 class TaskArgs(BaseModel):
