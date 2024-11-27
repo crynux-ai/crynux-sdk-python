@@ -236,6 +236,31 @@ class ContractWrapper(object):
         else:
             return await _call(w3)
 
+    async def get_events(
+        self,
+        event_name: str,
+        filter_args: Optional[Dict[str, Any]] = None,
+        from_block: Optional[int] = None,
+        to_block: Optional[int] = None,
+        w3: Optional[AsyncWeb3] = None,
+    ) -> List[EventData]:
+        assert self._address is not None, "Contract has not been deployed"
+
+        async def _get_events(w3: AsyncWeb3):
+            contract = w3.eth.contract(address=self._address, abi=self.abi)
+            event = contract.events[event_name]
+            event = cast(AsyncContractEvent, event)
+            events = await event.get_logs(
+                argument_filters=filter_args, fromBlock=from_block, toBlock=to_block
+            )
+            return list(events)
+
+        if w3 is None:
+            async with await self.w3_pool.get() as w3:
+                return await _get_events(w3)
+        else:
+            return await _get_events(w3)
+
     async def event_process_receipt(
         self,
         event_name: str,
@@ -245,7 +270,7 @@ class ContractWrapper(object):
     ) -> List[EventData]:
         assert self._address is not None, "Contract has not been deployed"
 
-        async def _process_receipt(w3: AsyncWeb3):
+        def _process_receipt(w3: AsyncWeb3):
             contract = w3.eth.contract(address=self._address, abi=self.abi)
             event = contract.events[event_name]()
             event = cast(AsyncContractEvent, event)
@@ -253,6 +278,6 @@ class ContractWrapper(object):
 
         if w3 is None:
             async with await self.w3_pool.get() as w3:
-                return await _process_receipt(w3)
+                return _process_receipt(w3)
         else:
-            return await _process_receipt(w3)
+            return _process_receipt(w3)
