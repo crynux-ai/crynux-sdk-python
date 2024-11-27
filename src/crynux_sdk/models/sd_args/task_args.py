@@ -3,11 +3,12 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional, TypedDict, Union
 
 from annotated_types import Ge, Gt, Le, Lt
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing_extensions import Annotated
 
 from ..types import FloatFractionAsInt, NonEmptyString
 from .controlnet_args import ControlnetArgs
+from .scheduler_args import LCM, DPMSolverMultistep, EulerAncestralDiscrete
 
 
 class RefinerArgs(BaseModel):
@@ -35,12 +36,14 @@ class TaskConfig(BaseModel):
     # whether to enable safety checker
     safety_checker: bool = True
     # cfg of stable diffusion
-    cfg: Annotated[int, Gt(0), Le(20)] = 5
+    cfg: Annotated[int, Ge(0), Le(20)] = 5
 
 
 class TaskArgs(BaseModel):
     # base model for image generation
     base_model: NonEmptyString
+    # custom unet model name
+    unet: str = ""
     # prompt for image generation
     prompt: NonEmptyString
     # negative prompt for image generation
@@ -51,6 +54,12 @@ class TaskArgs(BaseModel):
     lora: Optional[LoraArgs] = None
     # controlnet config
     controlnet: Optional[ControlnetArgs] = None
+    # custom scheduler args
+    scheduler: Union[
+        DPMSolverMultistep,
+        EulerAncestralDiscrete,
+        LCM
+    ] = Field(discriminator="method", default=DPMSolverMultistep())
     # custom vae model name
     vae: str = ""
     # refiner config
@@ -60,12 +69,16 @@ class TaskArgs(BaseModel):
 
 
 class TaskOptionalArgs(TypedDict, total=False):
+    # custom unet model name
+    unet: str
     # task config for image generation
     task_config: Union[TaskConfig, Mapping[str, Any]]
     # lora config
     lora: Union[LoraArgs, Mapping[str, Any]]
     # controlnet config
     controlnet: Union[ControlnetArgs, Mapping[str, Any]]
+    # custom scheduler args
+    scheduler: Union[DPMSolverMultistep, EulerAncestralDiscrete, LCM, Mapping[str, Any]]
     # custom vae model name
     vae: str
     # refiner config

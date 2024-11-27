@@ -141,7 +141,7 @@ class Task(object):
         task_fee: int,
         prompt: str,
         vram_limit: Optional[int] = None,
-        base_model: str = "runwayml/stable-diffusion-v1-5",
+        base_model: str = "crynux-ai/stable-diffusion-v1-5",
         negative_prompt: str = "",
         max_retries: int = 5,
         task_optional_args: Optional[sd_args.TaskOptionalArgs] = None,
@@ -155,13 +155,22 @@ class Task(object):
             task_args_obj.update(task_optional_args)
 
         task_args = sd_args.TaskArgs.model_validate(task_args_obj)
+        if base_model == "crynux-ai/sdxl-turbo":
+            task_args.task_config.cfg = 0
+            task_args.task_config.steps = max(4, task_args.task_config.steps)
+            task_args.scheduler = sd_args.scheduler_args.EulerAncestralDiscrete(
+                args=sd_args.scheduler_args.CommonSchedulerArgs(
+                    timestep_spacing="trailing"
+                )
+            )
         task_args_str = task_args.model_dump_json()
-
         cap = task_args.task_config.num_images
 
         if vram_limit is None:
-            if base_model == "runwayml/stable-diffusion-v1-5":
+            if base_model == "crynux-ai/stable-diffusion-v1-5":
                 vram_limit = 8
+            elif base_model == "crynux-ai/sdxl-turbo" or base_model == "crynux-ai/stable-diffusion-xl-base-1.0":
+                vram_limit = 14
             else:
                 vram_limit = 10
 
