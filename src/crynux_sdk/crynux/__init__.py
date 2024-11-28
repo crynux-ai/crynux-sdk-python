@@ -8,8 +8,9 @@ import tempfile
 from functools import partial
 from typing import List, Literal, Optional, Tuple, Union
 
-from anyio import fail_after, to_thread
+from anyio import fail_after, to_thread, create_task_group
 from tenacity import (
+    retry,
     AsyncRetrying,
     RetryCallState,
     retry_if_exception_cause_type,
@@ -200,6 +201,28 @@ class Crynux(object):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
+    async def _cancel_task(self, task_id_commitment: bytes):
+        _logger.info(f"try to cancel task {task_id_commitment.hex()}")
+        try:
+            await self.task.cancel_task(task_id_commitment=task_id_commitment)
+            _logger.info(f"cancel task {task_id_commitment.hex()} successfully")
+
+        except TxRevertedError as e:
+            _logger.error(
+                f"cannot cancel task {task_id_commitment.hex()} due to tx reverted: {e.reason}"
+            )
+            raise TaskCancelError(
+                task_id_commitment=task_id_commitment, reason=e.reason
+            )
+        except Exception as e:
+            _logger.error(
+                f"cannot cancel task {task_id_commitment.hex()} due to {str(e)}"
+            )
+            raise TaskCancelError(
+                task_id_commitment=task_id_commitment, reason=str(e)
+            )
+
+
     async def deposit(self, address: str, amount: int, unit: str = "ether"):
         """
         deposit tokens to the address
@@ -219,9 +242,12 @@ class Crynux(object):
         dst_dir: Union[str, pathlib.Path],
         task_fee: int,
         prompt: str,
-        vram_limit: Optional[int] = None,
-        base_model: str = "runwayml/stable-diffusion-v1-5",
+        min_vram: Optional[int] = None,
+        base_model: str = "crynux-ai/stable-diffusion-v1-5",
         negative_prompt: str = "",
+        required_gpu: str = "",
+        required_gpu_vram: int = 0,
+        task_version: str = "v3.0.0",
         task_optional_args: Optional[sd_args.TaskOptionalArgs] = None,
         task_fee_unit: str = "ether",
         max_retries: int = 5,
@@ -229,7 +255,7 @@ class Crynux(object):
         timeout: Optional[float] = None,
         wait_interval: int = 1,
         auto_cancel: bool = True,
-    ) -> Tuple[int, int, List[pathlib.Path]]:
+    ) -> Tuple[bytes, List[bytes], List[pathlib.Path]]:
         """
         generate images by crynux network
 
@@ -253,139 +279,12 @@ class Crynux(object):
         wait_interval: The interval in seconds for checking crynux contracts events. Default to 1 second.
         auto_cancel: Whether to cancel the timeout image generation task automatically. Default to True.
 
-        returns: a tuple of task id, blocknum when the task starts, and the result image paths
+        returns: a tuple of task id, task id commitments, and the result image paths
         """
         assert self._initialized, "Crynux sdk hasn't been initialized"
         assert not self._closed, "Crynux sdk has been closed"
 
         task_fee = Web3.to_wei(task_fee, task_fee_unit)
-
-        async def _run_task():
-            task_id = 0
-            start_blocknum = 0
-            task_created = False
-            task_success = False
-            try:
-                with fail_after(timeout):
-                    blocknum, tx_hash, task_id, cap = await self.task.create_sd_task(
-                        task_fee=task_fee,
-                        prompt=prompt,
-                        vram_limit=vram_limit,
-                        base_model=base_model,
-                        negative_prompt=negative_prompt,
-                        task_optional_args=task_optional_args,
-                        max_retries=max_retries,
-                    )
-                    task_created = True
-                    _logger.debug(f"task {task_id} is created at tx {tx_hash.hex()}")
-
-                    async for attemp in AsyncRetrying(
-                        wait=wait_fixed(2),
-                        stop=stop_after_attempt(max_retries),
-                        retry=retry_if_not_exception_type(TaskAbortedError),
-                        reraise=True,
-                    ):
-                        with attemp:
-                            blocknum, tx_hash, _ = await self.task.wait_task_started(
-                                task_id=task_id,
-                                from_block=blocknum,
-                                interval=wait_interval,
-                            )
-                    start_blocknum = blocknum
-                    _logger.debug(f"task {task_id} starts at tx {tx_hash.hex()}")
-                    _logger.info(f"task {task_id} starts")
-
-                    _logger.info(f"waiting task {task_id} to complete")
-                    async for attemp in AsyncRetrying(
-                        wait=wait_fixed(2),
-                        stop=stop_after_attempt(max_retries),
-                        retry=retry_if_not_exception_type(TaskAbortedError),
-                        reraise=True,
-                    ):
-                        with attemp:
-                            blocknum, tx_hash, _ = await self.task.wait_task_finish(
-                                task_id=task_id,
-                                from_block=blocknum,
-                                interval=wait_interval,
-                            )
-                    _logger.debug(
-                        f"task {task_id} finish successfully at tx {tx_hash.hex()}"
-                    )
-                    task_success = True
-
-                    async for attemp in AsyncRetrying(
-                        wait=wait_fixed(2),
-                        stop=stop_after_attempt(max_retries),
-                        reraise=True,
-                    ):
-                        with attemp:
-                            (
-                                blocknum,
-                                tx_hash,
-                                _,
-                            ) = await self.task.wait_task_result_uploaded(
-                                task_id=task_id,
-                                from_block=blocknum,
-                                interval=wait_interval,
-                            )
-                    _logger.debug(
-                        f"result of task {task_id} is uploaded at tx {tx_hash.hex()}"
-                    )
-
-                    files: List[pathlib.Path] = []
-                    async for attemp in AsyncRetrying(
-                        wait=wait_fixed(2),
-                        stop=stop_after_attempt(max_retries),
-                        reraise=True,
-                    ):
-                        with attemp:
-                            files = await self.task.get_task_result(
-                                task_id=task_id,
-                                task_type=TaskType.SD,
-                                count=cap,
-                                dst_dir=dst_dir,
-                            )
-                    return task_id, start_blocknum, files
-
-            except TimeoutError as timeout_exc:
-                if auto_cancel and task_id > 0 and task_created:
-                    if not task_success:
-                        _logger.error(
-                            f"task {task_id} is not successful after {timeout} seconds"
-                        )
-                        _logger.info(f"try to cancel task {task_id}")
-                        # try cancel the task
-                        try:
-                            async for attemp in AsyncRetrying(
-                                wait=wait_fixed(2),
-                                stop=stop_after_attempt(max_retries),
-                                retry=retry_if_not_exception_type(TxRevertedError),
-                                reraise=True,
-                            ):
-                                with attemp:
-                                    await self.task.cancel_task(task_id=task_id)
-                                    _logger.info(f"cancel task {task_id} successfully")
-                        except TxRevertedError as e:
-                            _logger.error(
-                                f"cannot cancel task {task_id} due to tx reverted: {e.reason}"
-                            )
-                            raise TaskCancelError(
-                                task_id=task_id, reason=e.reason
-                            ) from timeout_exc
-                        except Exception as e:
-                            _logger.error(
-                                f"cannot cancel task {task_id} due to {str(e)}"
-                            )
-                            raise TaskCancelError(
-                                task_id=task_id, reason=str(e)
-                            ) from timeout_exc
-                        raise timeout_exc
-                    else:
-                        e = TaskGetResultTimeout(task_id=task_id)
-                        _logger.error(str(e))
-                        raise TaskGetResultTimeout(task_id=task_id) from timeout_exc
-                else:
-                    raise timeout_exc
 
         def _log_before_retry(retry_state: RetryCallState):
             if retry_state.outcome is not None and retry_state.outcome.failed:
@@ -401,26 +300,82 @@ class Crynux(object):
                 )
                 _logger.error(msg)
 
-        async for attemp in AsyncRetrying(
+        @retry(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_timeout_retries),
             retry=retry_if_exception_type((TaskAbortedError, TimeoutError))
             | retry_if_exception_cause_type(TimeoutError),
             before_sleep=_log_before_retry,
             reraise=True,
-        ):
-            with attemp:
-                res = await _run_task()
-        return res
+        )
+        async def _run_task():
+            task_id = b""
+            result_task_id_commitment = b""
+            task_id_commitments = []
+            task_size = 0
+            try:
+                with fail_after(timeout):
+                    task_id, task_id_commitments, vrf_proof, task_size = await self.task.create_sd_task(
+                        task_fee=task_fee,
+                        prompt=prompt,
+                        min_vram=min_vram,
+                        base_model=base_model,
+                        negative_prompt=negative_prompt,
+                        required_gpu=required_gpu,
+                        required_gpu_vram=required_gpu_vram,
+                        task_version=task_version,
+                        max_retries=max_retries,
+                        wait_interval=wait_interval,
+                        task_optional_args=task_optional_args
+                    )
+
+                    result_task_id_commitment = await self.task.execute_task(
+                        task_id=task_id,
+                        task_id_commitments=task_id_commitments,
+                        vrf_proof=vrf_proof,
+                        wait_interval=wait_interval,
+                        max_retries=max_retries
+                    )
+
+            except TimeoutError as timeout_exc:
+                if auto_cancel and len(task_id_commitments):
+                    _logger.error(
+                        f"task {task_id.hex()} {[c.hex() for c in task_id_commitments]} is not successful after {timeout} seconds"
+                    )
+                    _logger.info(f"try to cancel task {task_id}")
+                    # try cancel the task
+                    try:
+                        async with create_task_group() as tg:
+                            for task_id_commitment in task_id_commitments:
+                                tg.start_soon(self._cancel_task, task_id_commitment)
+                    except Exception as e:
+                        raise e from timeout_exc
+                    raise timeout_exc
+                else:
+                    raise timeout_exc
+            
+            assert len(result_task_id_commitment) > 0
+            try:
+                with fail_after(timeout):
+                    files = await self.task.get_task_result(task_id_commitment=result_task_id_commitment, task_type=TaskType.SD, count=task_size, dst_dir=dst_dir, max_retries=max_retries)
+            except TimeoutError as timeout_exc:
+                e = TaskGetResultTimeout(task_id_commitment=result_task_id_commitment)
+                _logger.error(str(e))
+                raise e from timeout_exc
+
+            return task_id, task_id_commitments, files
+
+        return await _run_task()
 
     async def finetune_sd_lora(
         self,
         result_checkpoint_path: Union[str, pathlib.Path],
         task_fee: int,
-        gpu_name: str,
-        gpu_vram: int,
+        required_gpu: str,
+        required_gpu_vram: int,
         model_name: str,
         dataset_name: str,
+        task_version: str = "v3.0.0",
         model_variant: Optional[str] = None,
         model_revision: str = "main",
         dataset_config_name: Optional[str] = None,
@@ -469,7 +424,7 @@ class Crynux(object):
         timeout: Optional[float] = None,
         wait_interval: int = 1,
         auto_cancel: bool = True,
-    ):
+    ) -> Tuple[List[bytes], List[List[bytes]]]:
         """
         Finetune a lora model for stable diffusion by crynux network.
         Due to the training time of whole task may be very long, this task will split the whole task
@@ -551,20 +506,43 @@ class Crynux(object):
 
         task_fee = Web3.to_wei(task_fee, task_fee_unit)
 
+        def _log_before_retry(retry_state: RetryCallState):
+            if retry_state.outcome is not None and retry_state.outcome.failed:
+                exc: Exception = retry_state.outcome.exception()
+                if isinstance(exc, TaskAbortedError):
+                    msg = f"image generation failed due to {exc.reason}, "
+                else:
+                    msg = f"image generation doesn't complete in {timeout} seconds, "
+
+                retry_times = max_timeout_retries - retry_state.attempt_number
+                msg += (
+                    f"retry the image generation, remaining retring times {retry_times}"
+                )
+                _logger.error(msg)
+
+        @retry(
+            wait=wait_fixed(2),
+            stop=stop_after_attempt(max_timeout_retries),
+            retry=retry_if_exception_type((TaskAbortedError, TimeoutError))
+            | retry_if_exception_cause_type(TimeoutError),
+            before_sleep=_log_before_retry,
+            reraise=True,
+        )
         async def _run_task(
             result_checkpoint: str, input_checkpoint: Optional[str] = None
         ):
-            task_id = 0
-            start_blocknum = 0
-            task_created = False
-            task_success = False
+            task_id = b""
+            result_task_id_commitment = b""
+            task_id_commitments = []
+
             try:
                 with fail_after(timeout):
-                    blocknum, tx_hash, task_id, cap = (
+                    task_id, task_id_commitments, vrf_proof, task_size  = (
                         await self.task.create_sd_finetune_lora_task(
                             task_fee=task_fee,
-                            gpu_name=gpu_name,
-                            gpu_vram=gpu_vram,
+                            required_gpu=required_gpu,
+                            required_gpu_vram=required_gpu_vram,
+                            task_version=task_version,
                             model_name=model_name,
                             dataset_name=dataset_name,
                             model_variant=model_variant,
@@ -605,126 +583,45 @@ class Crynux(object):
                             max_retries=max_retries,
                         )
                     )
-                    task_created = True
-                    _logger.debug(f"task {task_id} is created at tx {tx_hash.hex()}")
 
-                    async for attemp in AsyncRetrying(
-                        wait=wait_fixed(2),
-                        stop=stop_after_attempt(max_retries),
-                        retry=retry_if_not_exception_type(TaskAbortedError),
-                        reraise=True,
-                    ):
-                        with attemp:
-                            blocknum, tx_hash, _ = await self.task.wait_task_started(
-                                task_id=task_id,
-                                from_block=blocknum,
-                                interval=wait_interval,
-                            )
-                    start_blocknum = blocknum
-                    _logger.debug(f"task {task_id} starts at tx {tx_hash.hex()}")
-                    _logger.info(f"task {task_id} starts")
-
-                    _logger.info(f"waiting task {task_id} to complete")
-                    async for attemp in AsyncRetrying(
-                        wait=wait_fixed(2),
-                        stop=stop_after_attempt(max_retries),
-                        retry=retry_if_not_exception_type(TaskAbortedError),
-                        reraise=True,
-                    ):
-                        with attemp:
-                            blocknum, tx_hash, _ = await self.task.wait_task_finish(
-                                task_id=task_id,
-                                from_block=blocknum,
-                                interval=wait_interval,
-                            )
-                    _logger.debug(
-                        f"task {task_id} finish successfully at tx {tx_hash.hex()}"
+                    result_task_id_commitment = await self.task.execute_task(
+                        task_id=task_id,
+                        task_id_commitments=task_id_commitments,
+                        vrf_proof=vrf_proof,
+                        wait_interval=wait_interval,
+                        max_retries=max_retries
                     )
-                    task_success = True
-
-                    async for attemp in AsyncRetrying(
-                        wait=wait_fixed(2),
-                        stop=stop_after_attempt(max_retries),
-                        reraise=True,
-                    ):
-                        with attemp:
-                            (
-                                blocknum,
-                                tx_hash,
-                                _,
-                            ) = await self.task.wait_task_result_uploaded(
-                                task_id=task_id,
-                                from_block=blocknum,
-                                interval=wait_interval,
-                            )
-                    _logger.debug(
-                        f"result of task {task_id} is uploaded at tx {tx_hash.hex()}"
-                    )
-
-                    async for attemp in AsyncRetrying(
-                        wait=wait_fixed(2),
-                        stop=stop_after_attempt(max_retries),
-                        reraise=True,
-                    ):
-                        with attemp:
-                            await self.task.get_task_result_checkpoint(
-                                task_id=task_id, checkpoint_dir=result_checkpoint
-                            )
-                    return task_id, start_blocknum
 
             except TimeoutError as timeout_exc:
-                if auto_cancel and task_id > 0 and task_created:
-                    if not task_success:
-                        _logger.error(
-                            f"task {task_id} is not successful after {timeout} seconds"
-                        )
-                        _logger.info(f"try to cancel task {task_id}")
-                        # try cancel the task
-                        try:
-                            async for attemp in AsyncRetrying(
-                                wait=wait_fixed(2),
-                                stop=stop_after_attempt(max_retries),
-                                retry=retry_if_not_exception_type(TxRevertedError),
-                                reraise=True,
-                            ):
-                                with attemp:
-                                    await self.task.cancel_task(task_id=task_id)
-                                    _logger.info(f"cancel task {task_id} successfully")
-                        except TxRevertedError as e:
-                            _logger.error(
-                                f"cannot cancel task {task_id} due to tx reverted: {e.reason}"
-                            )
-                            raise TaskCancelError(
-                                task_id=task_id, reason=e.reason
-                            ) from timeout_exc
-                        except Exception as e:
-                            _logger.error(
-                                f"cannot cancel task {task_id} due to {str(e)}"
-                            )
-                            raise TaskCancelError(
-                                task_id=task_id, reason=str(e)
-                            ) from timeout_exc
-                        raise timeout_exc
-                    else:
-                        e = TaskGetResultTimeout(task_id=task_id)
-                        _logger.error(str(e))
-                        raise TaskGetResultTimeout(task_id=task_id) from timeout_exc
+                if auto_cancel and len(task_id_commitments):
+                    _logger.error(
+                        f"task {task_id.hex()} {[c.hex() for c in task_id_commitments]} is not successful after {timeout} seconds"
+                    )
+                    _logger.info(f"try to cancel task {task_id}")
+                    # try cancel the task
+                    try:
+                        async with create_task_group() as tg:
+                            for task_id_commitment in task_id_commitments:
+                                tg.start_soon(self._cancel_task, task_id_commitment)
+                    except Exception as e:
+                        raise e from timeout_exc
+                    raise timeout_exc
                 else:
                     raise timeout_exc
+                
+            try:
+                with fail_after(timeout):
+                    await self.task.get_task_result_checkpoint(
+                        task_id_commitment=result_task_id_commitment,
+                        checkpoint_dir=result_checkpoint,
+                        max_retries=max_retries
+                    )
+            except TimeoutError as timeout_exc:
+                e = TaskGetResultTimeout(task_id_commitment=result_task_id_commitment)
+                _logger.error(str(e))
+                raise e from timeout_exc
 
-        def _log_before_retry(retry_state: RetryCallState):
-            if retry_state.outcome is not None and retry_state.outcome.failed:
-                exc: Exception = retry_state.outcome.exception()
-                if isinstance(exc, TaskAbortedError):
-                    msg = f"image generation failed due to {exc.reason}, "
-                else:
-                    msg = f"image generation doesn't complete in {timeout} seconds, "
-
-                retry_times = max_timeout_retries - retry_state.attempt_number
-                msg += (
-                    f"retry the image generation, remaining retring times {retry_times}"
-                )
-                _logger.error(msg)
+            return task_id, task_id_commitments
 
         task_num = 0
         if input_checkpoint_path is not None:
@@ -732,24 +629,15 @@ class Crynux(object):
         else:
             input_checkpoint = None
         task_ids = []
-        start_blocknums = []
+        task_id_commitments_list = []
         with tempfile.TemporaryDirectory() as tmp_dir:
             while True:
                 result_checkpoint = os.path.join(tmp_dir, f"checkpoint-{task_num}")
-                async for attemp in AsyncRetrying(
-                    wait=wait_fixed(2),
-                    stop=stop_after_attempt(max_timeout_retries),
-                    retry=retry_if_exception_type((TaskAbortedError, TimeoutError))
-                    | retry_if_exception_cause_type(TimeoutError),
-                    before_sleep=_log_before_retry,
-                    reraise=True,
-                ):
-                    with attemp:
-                        task_id, start_blocknum = await _run_task(
-                            result_checkpoint, input_checkpoint
-                        )
-                        task_ids.append(task_id)
-                        start_blocknums.append(start_blocknum)
+                task_id, task_id_commitments = await _run_task(
+                    result_checkpoint, input_checkpoint
+                )
+                task_ids.append(task_id)
+                task_id_commitments_list.append(task_id_commitments)
 
                 finish_file = os.path.join(result_checkpoint, "FINISH")
                 if os.path.exists(finish_file):
@@ -764,4 +652,4 @@ class Crynux(object):
                     break
 
                 input_checkpoint = result_checkpoint
-        return task_ids, start_blocknums
+        return task_ids, task_id_commitments_list

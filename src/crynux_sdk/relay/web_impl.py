@@ -37,9 +37,9 @@ def _process_resp(resp: httpx.Response, method: str):
 
 
 class WebRelay(Relay):
-    def __init__(self, base_url: str, privkey: str) -> None:
+    def __init__(self, base_url: str, privkey: str, timeout: float = 30) -> None:
         super().__init__()
-        self.client = httpx.AsyncClient(base_url=base_url, timeout=30)
+        self.client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
         self.signer = Signer(privkey=privkey)
 
     async def create_task(self, task_id_commitment: bytes, task_args: str, checkpoint_dir: Optional[str] = None) -> RelayTask:
