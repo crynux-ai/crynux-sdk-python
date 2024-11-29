@@ -166,7 +166,7 @@ class Task(object):
                 waiter = await self._contracts.task_contract.validate_single_task(
                     task_id_commitment=task_id_commitment,
                     vrf_proof=vrf_proof,
-                    public_key=self._contracts.public_key,
+                    public_key=self._contracts.public_key.to_bytes(),
                     option=self._option,
                 )
             await waiter.wait()
@@ -199,7 +199,7 @@ class Task(object):
                     task_id_commitment3=task_id_commitments[2],
                     task_id=task_id,
                     vrf_proof=vrf_proof,
-                    public_key=self._contracts.public_key,
+                    public_key=self._contracts.public_key.to_bytes(),
                     option=self._option,
                 )
             await waiter.wait()
@@ -295,7 +295,7 @@ class Task(object):
 
         # check if need 2 additional tasks for validation
         sampling_seed = task.sampling_seed
-        num, vrf_proof = utils.generate_vrf(sampling_seed, self._contracts.private_key)
+        num, vrf_proof = utils.generate_vrf(sampling_seed, self._contracts.private_key.to_bytes())
         if num % 10 == 0:
             # for llm and sd_ft task, need to keep all three tasks using the same GPU
             if task_type == TaskType.LLM or task_type == TaskType.SD_FT_LORA:
