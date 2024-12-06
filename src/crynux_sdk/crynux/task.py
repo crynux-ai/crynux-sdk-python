@@ -523,8 +523,10 @@ class Task(object):
         while True:
             task = await self._get_task(task_id_commitment, max_retries=max_retries)
             if task.status == TaskStatus.Started:
+                _logger.info(f"task {task_id_commitment.hex()} is started")
                 return task
             elif task.status == TaskStatus.EndAborted:
+                _logger.info(f"task {task_id_commitment.hex()} is aborted")
                 raise TaskAbortedError(
                     task_id_commitment=task_id_commitment, reason=task.abort_reason.name
                 )
@@ -535,12 +537,14 @@ class Task(object):
     ):
         while True:
             task = await self._get_task(task_id_commitment, max_retries=max_retries)
-            if (
-                task.status == TaskStatus.ScoreReady
-                or task.status == TaskStatus.ErrorReported
-            ):
+            if task.status == TaskStatus.ScoreReady:
+                _logger.info(f"task {task_id_commitment.hex()} score is ready")
+                return task
+            elif task.status == TaskStatus.ErrorReported:
+                _logger.info(f"task {task_id_commitment.hex()} reported error")
                 return task
             elif task.status == TaskStatus.EndAborted:
+                _logger.info(f"task {task_id_commitment.hex()} is aborted")
                 raise TaskAbortedError(
                     task_id_commitment=task_id_commitment, reason=task.abort_reason.name
                 )
@@ -574,8 +578,10 @@ class Task(object):
         while True:
             task = await self._get_task(task_id_commitment, max_retries=max_retries)
             if task.status == TaskStatus.Validated:
+                _logger.info(f"task {task_id_commitment.hex()} is validated")
                 return task
             elif task.status == TaskStatus.EndAborted:
+                _logger.info(f"task {task_id_commitment.hex()} is aborted")
                 raise TaskAbortedError(
                     task_id_commitment=task_id_commitment, reason=task.abort_reason.name
                 )
@@ -586,13 +592,17 @@ class Task(object):
     ):
         while True:
             task = await self._get_task(task_id_commitment, max_retries=max_retries)
-            if (
-                task.status == TaskStatus.GroupValidated
-                or task.status == TaskStatus.EndGroupRefund
-                or task.status == TaskStatus.EndInvalidated
-            ):
+            if task.status == TaskStatus.GroupValidated:
+                _logger.info(f"task {task_id_commitment.hex()} is validated")
+                return task
+            elif task.status == TaskStatus.EndGroupRefund:
+                _logger.info(f"task {task_id_commitment.hex()} is successful")
+                return task
+            elif task.status == TaskStatus.EndInvalidated:
+                _logger.info(f"task {task_id_commitment.hex()} is invalidated")
                 return task
             elif task.status == TaskStatus.EndAborted:
+                _logger.info(f"task {task_id_commitment.hex()} is aborted")
                 raise TaskAbortedError(
                     task_id_commitment=task_id_commitment, reason=task.abort_reason.name
                 )
@@ -657,8 +667,10 @@ class Task(object):
                 task.status == TaskStatus.EndSuccess
                 or task.status == TaskStatus.EndGroupSuccess
             ):
+                _logger.info(f"task {task_id_commitment.hex()} is successful")
                 return task
             elif task.status == TaskStatus.EndAborted:
+                _logger.info(f"task {task_id_commitment.hex()} is aborted")
                 raise TaskAbortedError(
                     task_id_commitment=task_id_commitment, reason=task.abort_reason.name
                 )
