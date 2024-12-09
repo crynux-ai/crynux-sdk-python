@@ -16,7 +16,8 @@ dependencies = [
     "pydantic",
     "tenacity~=8.2.3",
     "importlib_resources",
-    "eth-rlp<2.0.0"
+    "eth-rlp<2.0.0",
+    "httpx"
 ]
 version = "0.0.1"
 
