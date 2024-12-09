@@ -309,7 +309,7 @@ class Task(object):
                 for _ in range(2):
                     tg.start_soon(_create)
 
-        if sequences[1] > sequences[2]:
+        if len(sequences) == 3 and sequences[1] > sequences[2]:
             task_id_commitments[1], task_id_commitments[2] = (
                 task_id_commitments[2],
                 task_id_commitments[1],
@@ -343,7 +343,7 @@ class Task(object):
         negative_prompt: str = "",
         required_gpu: str = "",
         required_gpu_vram: int = 0,
-        task_version: str = "v3.0.0",
+        task_version: str = "3.0.0",
         max_retries: int = 5,
         wait_interval: int = 1,
         task_optional_args: Optional[sd_args.TaskOptionalArgs] = None,
@@ -404,7 +404,7 @@ class Task(object):
         required_gpu_vram: int,
         model_name: str,
         dataset_name: str,
-        task_version: str = "v3.0.0",
+        task_version: str = "3.0.0",
         model_variant: Optional[str] = None,
         model_revision: str = "main",
         dataset_config_name: Optional[str] = None,
