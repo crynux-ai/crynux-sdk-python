@@ -209,36 +209,15 @@ class Task(object):
 
         return await _inner()
 
-    async def _create_single_task(
+    async def _upload_task_args(
         self,
-        task_id: bytes,
+        task_id_commitment: bytes,
         task_args: str,
-        task_type: TaskType,
-        task_model_id: str,
-        task_version: str,
-        task_fee: int,
-        task_size: int,
-        min_vram: int,
-        required_gpu: str = "",
-        required_gpu_vram: int = 0,
         checkpoint_dir: Optional[str] = None,
         max_retries: int = 5,
         wait_interval: int = 1,
     ):
-        task_id_commitment = await self._create_task_on_chain(
-            task_id=task_id,
-            task_type=task_type,
-            task_model_id=task_model_id,
-            task_version=task_version,
-            task_fee=task_fee,
-            task_size=task_size,
-            min_vram=min_vram,
-            required_gpu=required_gpu,
-            required_gpu_vram=required_gpu_vram,
-            max_retries=max_retries,
-        )
-
-        task = await self._wait_task_started(
+        await self._wait_task_started(
             task_id_commitment=task_id_commitment,
             interval=wait_interval,
             max_retries=max_retries,
@@ -249,7 +228,6 @@ class Task(object):
             checkpoint_dir=checkpoint_dir,
             max_retries=max_retries,
         )
-        return task
 
     async def _create_task(
         self,
@@ -265,37 +243,39 @@ class Task(object):
         checkpoint_dir: Optional[str] = None,
         max_retries: int = 5,
         wait_interval: int = 1,
-    ) -> Tuple[bytes, List[bytes], bytes]:
-        task_id_commitments: List[bytes] = []
-        sequences: List[int] = []
+    ):
         task_id = utils.generate_task_id()
 
         # create the first task
-        async def _create():
-            task = await self._create_single_task(
-                task_id=task_id,
-                task_args=task_args,
-                task_type=task_type,
-                task_model_id=task_model_id,
-                task_version=task_version,
-                task_fee=task_fee,
-                task_size=task_size,
-                min_vram=min_vram,
-                required_gpu=required_gpu,
-                required_gpu_vram=required_gpu_vram,
-                checkpoint_dir=checkpoint_dir,
-                max_retries=max_retries,
-                wait_interval=wait_interval,
-            )
-            task_id_commitments.append(task.task_id_commitment)
-            sequences.append(task.sequence)
-            return task
+        task_id_commitment = await self._create_task_on_chain(
+            task_id=task_id,
+            task_type=task_type,
+            task_model_id=task_model_id,
+            task_version=task_version,
+            task_fee=task_fee,
+            task_size=task_size,
+            min_vram=min_vram,
+            required_gpu=required_gpu,
+            required_gpu_vram=required_gpu_vram,
+            max_retries=max_retries,
+        )
+        task = await self._get_task(task_id_commitment, max_retries=max_retries)
+        sampling_seed = task.sampling_seed
+        num, vrf_proof = utils.vrf_prove(
+            sampling_seed, self._contracts.private_key.to_bytes()
+        )
 
-        task = await _create()
+        yield task_id, task_id_commitment, vrf_proof
+
+        await self._upload_task_args(
+            task_id_commitment=task_id_commitment,
+            task_args=task_args,
+            checkpoint_dir=checkpoint_dir,
+            max_retries=max_retries,
+            wait_interval=wait_interval,
+        )
 
         # check if need 2 additional tasks for validation
-        sampling_seed = task.sampling_seed
-        num, vrf_proof = utils.vrf_prove(sampling_seed, self._contracts.private_key.to_bytes())
         if num % 10 == 0:
             # for llm and sd_ft task, need to keep all three tasks using the same GPU
             if task_type == TaskType.LLM or task_type == TaskType.SD_FT_LORA:
@@ -305,17 +285,29 @@ class Task(object):
                 required_gpu = node_info.gpu.name
                 required_gpu_vram = node_info.gpu.vram
 
-            async with create_task_group() as tg:
-                for _ in range(2):
-                    tg.start_soon(_create)
-
-        if len(sequences) == 3 and sequences[1] > sequences[2]:
-            task_id_commitments[1], task_id_commitments[2] = (
-                task_id_commitments[2],
-                task_id_commitments[1],
-            )
-
-        return task_id, task_id_commitments, vrf_proof
+        async with create_task_group() as tg:
+            for _ in range(2):
+                task_id_commitment = await self._create_task_on_chain(
+                    task_id=task_id,
+                    task_type=task_type,
+                    task_model_id=task_model_id,
+                    task_version=task_version,
+                    task_fee=task_fee,
+                    task_size=task_size,
+                    min_vram=min_vram,
+                    required_gpu=required_gpu,
+                    required_gpu_vram=required_gpu_vram,
+                    max_retries=max_retries,
+                )
+                tg.start_soon(
+                    self._upload_task_args,
+                    task_id_commitment,
+                    task_args,
+                    checkpoint_dir,
+                    max_retries,
+                    wait_interval,
+                )
+                yield task_id, task_id_commitment, vrf_proof
 
     async def cancel_task(self, task_id_commitment: bytes, max_retries: int = 5):
         @retry(
@@ -347,7 +339,7 @@ class Task(object):
         max_retries: int = 5,
         wait_interval: int = 1,
         task_optional_args: Optional[sd_args.TaskOptionalArgs] = None,
-    ) -> Tuple[bytes, List[bytes], bytes, int]:
+    ):
         task_args_obj: Dict[str, Any] = {
             "prompt": prompt,
             "base_model": base_model,
@@ -382,7 +374,7 @@ class Task(object):
         if len(required_gpu) > 0 and required_gpu_vram > 0:
             min_vram = required_gpu_vram
 
-        task_id, task_id_commitments, vrf_proof = await self._create_task(
+        async for task_id, task_id_commitment, vrf_proof in  self._create_task(
             task_args=task_args_str,
             task_type=TaskType.SD,
             task_model_id=base_model,
@@ -394,8 +386,8 @@ class Task(object):
             required_gpu_vram=required_gpu_vram,
             max_retries=max_retries,
             wait_interval=wait_interval,
-        )
-        return task_id, task_id_commitments, vrf_proof, task_size
+        ):
+            yield task_id, task_id_commitment, vrf_proof, task_size
 
     async def create_sd_finetune_lora_task(
         self,
@@ -501,7 +493,7 @@ class Task(object):
             checkpoint="checkpoint.zip" if checkpoint is not None else None,
         )
         task_args_str = task_args.model_dump_json()
-        task_id, task_id_commitments, vrf_proof = await self._create_task(
+        async for task_id, task_id_commitment, vrf_proof in self._create_task(
             task_args=task_args_str,
             task_type=TaskType.SD_FT_LORA,
             task_model_id=model_name,
@@ -514,8 +506,8 @@ class Task(object):
             max_retries=max_retries,
             checkpoint_dir=checkpoint,
             wait_interval=wait_interval,
-        )
-        return task_id, task_id_commitments, vrf_proof, 1
+        ):
+            yield task_id, task_id_commitment, vrf_proof
 
     async def _wait_task_started(
         self, task_id_commitment: bytes, interval: int, max_retries: int = 5

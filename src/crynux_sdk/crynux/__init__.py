@@ -310,12 +310,13 @@ class Crynux(object):
         )
         async def _run_task():
             task_id = b""
+            vrf_proof = b""
             result_task_id_commitment = b""
             task_id_commitments = []
             task_size = 0
             try:
                 with fail_after(timeout):
-                    task_id, task_id_commitments, vrf_proof, task_size = await self.task.create_sd_task(
+                    async for _task_id, _task_id_commitment, _vrf_proof, _task_size in self.task.create_sd_task(
                         task_fee=task_fee,
                         prompt=prompt,
                         min_vram=min_vram,
@@ -327,7 +328,14 @@ class Crynux(object):
                         max_retries=max_retries,
                         wait_interval=wait_interval,
                         task_optional_args=task_optional_args
-                    )
+                    ):
+                        if len(task_id) == 0:
+                            task_id = _task_id
+                        task_id_commitments.append(_task_id_commitment)
+                        if len(vrf_proof) == 0:
+                            vrf_proof = _vrf_proof
+                        if task_size == 0:
+                            task_size = _task_size
 
                     result_task_id_commitment = await self.task.execute_task(
                         task_id=task_id,
@@ -342,7 +350,6 @@ class Crynux(object):
                     _logger.error(
                         f"task {task_id.hex()} {[c.hex() for c in task_id_commitments]} is not successful after {timeout} seconds"
                     )
-                    _logger.info(f"try to cancel task {task_id}")
                     # try cancel the task
                     try:
                         async with create_task_group() as tg:
@@ -532,57 +539,61 @@ class Crynux(object):
             result_checkpoint: str, input_checkpoint: Optional[str] = None
         ):
             task_id = b""
+            vrf_proof = b""
             result_task_id_commitment = b""
             task_id_commitments = []
 
             try:
                 with fail_after(timeout):
-                    task_id, task_id_commitments, vrf_proof, task_size  = (
-                        await self.task.create_sd_finetune_lora_task(
-                            task_fee=task_fee,
-                            required_gpu=required_gpu,
-                            required_gpu_vram=required_gpu_vram,
-                            task_version=task_version,
-                            model_name=model_name,
-                            dataset_name=dataset_name,
-                            model_variant=model_variant,
-                            model_revision=model_revision,
-                            dataset_config_name=dataset_config_name,
-                            dataset_image_column=dataset_image_column,
-                            dataset_caption_column=dataset_caption_column,
-                            validation_prompt=validation_prompt,
-                            validation_num_images=validation_num_images,
-                            center_crop=center_crop,
-                            random_flip=random_flip,
-                            rank=rank,
-                            init_lora_weights=init_lora_weights,
-                            target_modules=target_modules,
-                            learning_rate=learning_rate,
-                            batch_size=batch_size,
-                            gradient_accumulation_steps=gradient_accumulation_steps,
-                            prediction_type=prediction_type,
-                            max_grad_norm=max_grad_norm,
-                            num_train_epochs=num_train_epochs,
-                            num_train_steps=num_train_steps,
-                            max_train_epochs=max_train_epochs,
-                            max_train_steps=max_train_steps,
-                            scale_lr=scale_lr,
-                            resolution=resolution,
-                            noise_offset=noise_offset,
-                            snr_gamma=snr_gamma,
-                            lr_scheduler=lr_scheduler,
-                            lr_warmup_steps=lr_warmup_steps,
-                            adam_beta1=adam_beta1,
-                            adam_beta2=adam_beta2,
-                            adam_weight_decay=adam_weight_decay,
-                            adam_epsilon=adam_epsilon,
-                            dataloader_num_workers=dataloader_num_workers,
-                            mixed_precision=mixed_precision,
-                            seed=seed,
-                            checkpoint=input_checkpoint,
-                            max_retries=max_retries,
-                        )
-                    )
+                    async for _task_id, _task_id_commitment, _vrf_proof in self.task.create_sd_finetune_lora_task(
+                        task_fee=task_fee,
+                        required_gpu=required_gpu,
+                        required_gpu_vram=required_gpu_vram,
+                        task_version=task_version,
+                        model_name=model_name,
+                        dataset_name=dataset_name,
+                        model_variant=model_variant,
+                        model_revision=model_revision,
+                        dataset_config_name=dataset_config_name,
+                        dataset_image_column=dataset_image_column,
+                        dataset_caption_column=dataset_caption_column,
+                        validation_prompt=validation_prompt,
+                        validation_num_images=validation_num_images,
+                        center_crop=center_crop,
+                        random_flip=random_flip,
+                        rank=rank,
+                        init_lora_weights=init_lora_weights,
+                        target_modules=target_modules,
+                        learning_rate=learning_rate,
+                        batch_size=batch_size,
+                        gradient_accumulation_steps=gradient_accumulation_steps,
+                        prediction_type=prediction_type,
+                        max_grad_norm=max_grad_norm,
+                        num_train_epochs=num_train_epochs,
+                        num_train_steps=num_train_steps,
+                        max_train_epochs=max_train_epochs,
+                        max_train_steps=max_train_steps,
+                        scale_lr=scale_lr,
+                        resolution=resolution,
+                        noise_offset=noise_offset,
+                        snr_gamma=snr_gamma,
+                        lr_scheduler=lr_scheduler,
+                        lr_warmup_steps=lr_warmup_steps,
+                        adam_beta1=adam_beta1,
+                        adam_beta2=adam_beta2,
+                        adam_weight_decay=adam_weight_decay,
+                        adam_epsilon=adam_epsilon,
+                        dataloader_num_workers=dataloader_num_workers,
+                        mixed_precision=mixed_precision,
+                        seed=seed,
+                        checkpoint=input_checkpoint,
+                        max_retries=max_retries,
+                    ):
+                        if len(task_id) == 0:
+                            task_id = _task_id
+                        task_id_commitments.append(_task_id_commitment)
+                        if len(vrf_proof) == 0:
+                            vrf_proof = _vrf_proof
 
                     result_task_id_commitment = await self.task.execute_task(
                         task_id=task_id,
@@ -597,7 +608,6 @@ class Crynux(object):
                     _logger.error(
                         f"task {task_id.hex()} {[c.hex() for c in task_id_commitments]} is not successful after {timeout} seconds"
                     )
-                    _logger.info(f"try to cancel task {task_id}")
                     # try cancel the task
                     try:
                         async with create_task_group() as tg:
