@@ -285,29 +285,29 @@ class Task(object):
                 required_gpu = node_info.gpu.name
                 required_gpu_vram = node_info.gpu.vram
 
-        async with create_task_group() as tg:
-            for _ in range(2):
-                task_id_commitment = await self._create_task_on_chain(
-                    task_id=task_id,
-                    task_type=task_type,
-                    task_model_id=task_model_id,
-                    task_version=task_version,
-                    task_fee=task_fee,
-                    task_size=task_size,
-                    min_vram=min_vram,
-                    required_gpu=required_gpu,
-                    required_gpu_vram=required_gpu_vram,
-                    max_retries=max_retries,
-                )
-                tg.start_soon(
-                    self._upload_task_args,
-                    task_id_commitment,
-                    task_args,
-                    checkpoint_dir,
-                    max_retries,
-                    wait_interval,
-                )
-                yield task_id, task_id_commitment, vrf_proof
+            async with create_task_group() as tg:
+                for _ in range(2):
+                    task_id_commitment = await self._create_task_on_chain(
+                        task_id=task_id,
+                        task_type=task_type,
+                        task_model_id=task_model_id,
+                        task_version=task_version,
+                        task_fee=task_fee,
+                        task_size=task_size,
+                        min_vram=min_vram,
+                        required_gpu=required_gpu,
+                        required_gpu_vram=required_gpu_vram,
+                        max_retries=max_retries,
+                    )
+                    tg.start_soon(
+                        self._upload_task_args,
+                        task_id_commitment,
+                        task_args,
+                        checkpoint_dir,
+                        max_retries,
+                        wait_interval,
+                    )
+                    yield task_id, task_id_commitment, vrf_proof
 
     async def cancel_task(self, task_id_commitment: bytes, max_retries: int = 5):
         @retry(
