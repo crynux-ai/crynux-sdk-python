@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, List
 
 from eth_typing import ChecksumAddress
 from web3 import AsyncWeb3
@@ -69,11 +69,11 @@ class TaskContract(ContractWrapper):
         task_type: TaskType,
         task_id_commitment: bytes,
         nonce: bytes,
-        model_id: str,
+        model_ids: List[str],
         min_vram: int,
         required_gpu: str,
         required_gpu_vram: int,
-        task_version: str,
+        task_version: List[int],
         task_size: int,
         *,
         option: "Optional[TxOption]" = None,
@@ -84,7 +84,7 @@ class TaskContract(ContractWrapper):
             taskType=task_type,
             taskIDCommitment=task_id_commitment,
             nonce=nonce,
-            modelID=model_id,
+            modelIDs=model_ids,
             minimumVRAM=min_vram,
             requiredGPU=required_gpu,
             requiredGPUVRAM=required_gpu_vram,
@@ -208,7 +208,7 @@ class TaskContract(ContractWrapper):
             score=res[9],
             task_fee=res[10],
             task_size=res[11],
-            model_id=res[12],
+            task_model_ids=res[12],
             min_vram=res[13],
             required_gpu=res[14],
             required_gpu_vram=res[15],

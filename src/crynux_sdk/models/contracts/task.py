@@ -51,11 +51,11 @@ class ChainTask(BaseModel):
     score: bytes
     task_fee: int
     task_size: int
-    model_id: str
+    task_model_ids: List[str]
     min_vram: int
     required_gpu: str
     required_gpu_vram: int
-    task_version: str
+    task_version: List[int]
     abort_reason: TaskAbortReason
     error: TaskError
     payment_addresses: List[str]

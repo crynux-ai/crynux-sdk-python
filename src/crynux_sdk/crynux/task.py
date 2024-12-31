@@ -79,8 +79,8 @@ class Task(object):
         self,
         task_id: bytes,
         task_type: TaskType,
-        task_model_id: str,
-        task_version: str,
+        task_model_ids: List[str],
+        task_version: List[int],
         task_fee: int,
         task_size: int,
         min_vram: int,
@@ -105,7 +105,7 @@ class Task(object):
                     task_type=task_type,
                     task_id_commitment=task_id_commitment,
                     nonce=nonce,
-                    model_id=task_model_id,
+                    model_ids=task_model_ids,
                     min_vram=min_vram,
                     required_gpu=required_gpu,
                     required_gpu_vram=required_gpu_vram,
@@ -233,7 +233,7 @@ class Task(object):
         self,
         task_args: str,
         task_type: TaskType,
-        task_model_id: str,
+        task_model_ids: List[str],
         task_version: str,
         task_fee: int,
         task_size: int,
@@ -246,12 +246,15 @@ class Task(object):
     ):
         task_id = utils.generate_task_id()
 
+        version_list = [int(v) for v in task_version.split(".")]
+        assert len(version_list) == 3
+
         # create the first task
         task_id_commitment = await self._create_task_on_chain(
             task_id=task_id,
             task_type=task_type,
-            task_model_id=task_model_id,
-            task_version=task_version,
+            task_model_ids=task_model_ids,
+            task_version=version_list,
             task_fee=task_fee,
             task_size=task_size,
             min_vram=min_vram,
@@ -290,8 +293,8 @@ class Task(object):
                     task_id_commitment = await self._create_task_on_chain(
                         task_id=task_id,
                         task_type=task_type,
-                        task_model_id=task_model_id,
-                        task_version=task_version,
+                        task_model_ids=task_model_ids,
+                        task_version=version_list,
                         task_fee=task_fee,
                         task_size=task_size,
                         min_vram=min_vram,
@@ -377,7 +380,7 @@ class Task(object):
         async for task_id, task_id_commitment, vrf_proof in  self._create_task(
             task_args=task_args_str,
             task_type=TaskType.SD,
-            task_model_id=base_model,
+            task_model_ids=task_args.generate_model_ids(),
             task_version=task_version,
             task_fee=task_fee,
             task_size=task_size,
@@ -493,10 +496,13 @@ class Task(object):
             checkpoint="checkpoint.zip" if checkpoint is not None else None,
         )
         task_args_str = task_args.model_dump_json()
+        model_id = f"base:{model_name}"
+        if model_variant is not None:
+            model_id += f"+{model_variant}"
         async for task_id, task_id_commitment, vrf_proof in self._create_task(
             task_args=task_args_str,
             task_type=TaskType.SD_FT_LORA,
-            task_model_id=model_name,
+            task_model_ids=[model_id],
             task_version=task_version,
             task_fee=task_fee,
             task_size=1,
