@@ -335,6 +335,7 @@ class Task(object):
         prompt: str,
         min_vram: Optional[int] = None,
         base_model: str = "crynux-ai/stable-diffusion-v1-5",
+        variant: Optional[str] = "fp16",
         negative_prompt: str = "",
         required_gpu: str = "",
         required_gpu_vram: int = 0,
@@ -345,7 +346,10 @@ class Task(object):
     ):
         task_args_obj: Dict[str, Any] = {
             "prompt": prompt,
-            "base_model": base_model,
+            "base_model": {
+                "name": base_model,
+                "variant": variant,
+            },
             "negative_prompt": negative_prompt,
         }
         if task_optional_args is not None:
