@@ -244,6 +244,7 @@ class Crynux(object):
         prompt: str,
         min_vram: Optional[int] = None,
         base_model: str = "crynux-ai/stable-diffusion-v1-5",
+        variant: Optional[str] = "fp16",
         negative_prompt: str = "",
         required_gpu: str = "",
         required_gpu_vram: int = 0,
@@ -269,7 +270,8 @@ class Crynux(object):
         vram_limit: The GPU VRAM limit for image generation. Crynux network will select nodes
                     with vram larger than vram_limit to generate image for you.
                     If vram_limit is None, then the sdk will predict it by the base model.
-        base_model: The base model used for image generation, default to runwayml/stable-diffusion-v1-5.
+        base_model: The base model used for image generation, default to crynux-ai/stable-diffusion-v1-5.
+        variant: The variant of base model, default is fp16
         negative_prompt: The negative prompt for image generation.
         task_optional_args: Optional arguments for image generation. See crynux_sdk.models.sd_args.TaskOptionalArgs for details.
         task_fee_unit: The unit for task fee, default to "ether".
@@ -321,6 +323,7 @@ class Crynux(object):
                         prompt=prompt,
                         min_vram=min_vram,
                         base_model=base_model,
+                        variant=variant,
                         negative_prompt=negative_prompt,
                         required_gpu=required_gpu,
                         required_gpu_vram=required_gpu_vram,

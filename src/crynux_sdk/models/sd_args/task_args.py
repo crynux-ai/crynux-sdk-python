@@ -10,7 +10,7 @@ from .scheduler_args import LCM, DPMSolverMultistep, EulerAncestralDiscrete
 
 class RefinerArgs(BaseModel):
     model: NonEmptyString
-    variant: Optional[str] = "fp16"
+    variant: Optional[str] = None
     denoising_cutoff: FloatFractionAsInt = 80  # Not used if controlnet is enabled
     steps: Annotated[int, Gt(0), Le(100)] = 20
 
@@ -40,7 +40,7 @@ class TaskConfig(BaseModel):
 
 class BaseModelArgs(BaseModel):
     name: NonEmptyString
-    variant: Optional[str] = "fp16"
+    variant: Optional[str] = None
 
 
 class TaskArgs(BaseModel):

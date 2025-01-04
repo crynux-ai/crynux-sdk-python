@@ -158,7 +158,7 @@ class ControlnetArgs(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model: NonEmptyString
-    variant: Optional[str] = "fp16"
+    variant: Optional[str] = None
     image_dataurl: str = ""
     weight: FloatFractionAsInt = 70
     preprocess: Union[
