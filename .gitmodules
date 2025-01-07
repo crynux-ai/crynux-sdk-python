@@ -1,0 +1,3 @@
+[submodule "python-vrf"]
+	path = python-vrf
+	url = https://github.com/crynux-ai/python-vrf.git

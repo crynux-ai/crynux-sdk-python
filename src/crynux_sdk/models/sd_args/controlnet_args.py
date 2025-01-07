@@ -1,8 +1,6 @@
-from __future__ import annotations
+from typing import Literal, Optional, Union
 
-from typing import Literal, Union, Optional
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from ..types import FloatFractionAsInt, NonEmptyString
 
@@ -77,22 +75,22 @@ class PidiNetArgs(BaseModel):
 
 class PreprocessMethodScribblePidiNet(BaseModel):
     method: Literal["scribble_pidinet"] = "scribble_pidinet"
-    args: Optional[PidiNetArgs] = None
+    args: Optional[PidiNetArgs ] = None
 
 
 class PreprocessMethodSoftEdgePidiNet(BaseModel):
     method: Literal["softedge_pidinet"] = "softedge_pidinet"
-    args: Optional[PidiNetArgs] = None
+    args: Optional[PidiNetArgs ] = None
 
 
 class PreprocessMethodScribblePidiNetSafe(BaseModel):
     method: Literal["scribble_pidisafe"] = "scribble_pidisafe"
-    args: Optional[PidiNetArgs] = None
+    args: Optional[PidiNetArgs ] = None
 
 
 class PreprocessMethodSoftEdgePidiNetSafe(BaseModel):
     method: Literal["softedge_pidisafe"] = "softedge_pidisafe"
-    args: Optional[PidiNetArgs] = None
+    args: Optional[PidiNetArgs ] = None
 
 
 class PreprocessMethodNormalBAE(BaseModel):
@@ -157,8 +155,11 @@ class PreprocessMethodMediapipeFace(BaseModel):
 
 
 class ControlnetArgs(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     model: NonEmptyString
-    image_dataurl: NonEmptyString
+    variant: Optional[str] = None
+    image_dataurl: str = ""
     weight: FloatFractionAsInt = 70
     preprocess: Union[
         PreprocessMethodCanny,
