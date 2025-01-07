@@ -19,7 +19,7 @@ dependencies = [
     "eth-rlp<2.0.0",
     "httpx"
 ]
-version = "0.0.1"
+version = "3.0.0"
 
 [tool.setuptools.packages.find]
 where = ["src"]
