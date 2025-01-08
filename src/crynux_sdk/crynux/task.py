@@ -339,7 +339,7 @@ class Task(object):
         negative_prompt: str = "",
         required_gpu: str = "",
         required_gpu_vram: int = 0,
-        task_version: str = "3.0.0",
+        task_version: str = "2.5.0",
         max_retries: int = 5,
         wait_interval: int = 1,
         task_optional_args: Optional[sd_args.TaskOptionalArgs] = None,
@@ -381,7 +381,7 @@ class Task(object):
         if len(required_gpu) > 0 and required_gpu_vram > 0:
             min_vram = required_gpu_vram
 
-        async for task_id, task_id_commitment, vrf_proof in  self._create_task(
+        async for task_id, task_id_commitment, vrf_proof in self._create_task(
             task_args=task_args_str,
             task_type=TaskType.SD,
             task_model_ids=task_args.generate_model_ids(),
@@ -403,7 +403,7 @@ class Task(object):
         required_gpu_vram: int,
         model_name: str,
         dataset_name: str,
-        task_version: str = "3.0.0",
+        task_version: str = "2.5.0",
         model_variant: Optional[str] = None,
         model_revision: str = "main",
         dataset_config_name: Optional[str] = None,
