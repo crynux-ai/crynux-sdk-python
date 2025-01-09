@@ -267,6 +267,7 @@ class Task(object):
         num, vrf_proof = utils.vrf_prove(
             sampling_seed, self._contracts.private_key.to_bytes()
         )
+        _logger.info(f"sampling seed: {sampling_seed.hex()}, vrf proof: {vrf_proof.hex()}, num: {num}")
 
         yield task_id, task_id_commitment, vrf_proof
 
