@@ -369,13 +369,20 @@ class Crynux(object):
             assert len(result_task_id_commitment) > 0
             try:
                 with fail_after(timeout):
-                    files = await self.task.get_task_result(
-                        task_id_commitment=result_task_id_commitment,
-                        task_type=TaskType.SD,
-                        count=task_size,
-                        dst_dir=dst_dir,
-                        max_retries=max_retries,
-                    )
+                    async with create_task_group() as tg:
+                        # wait task success
+                        tg.start_soon(
+                            self.task.wait_task_success,
+                            result_task_id_commitment,
+                            wait_interval,
+                            max_retries,
+                        )
+                        files = await self.task.get_task_result(
+                            task_id_commitment=result_task_id_commitment,
+                            task_type=TaskType.SD,
+                            count=task_size,
+                            dst_dir=dst_dir,
+                        )
             except TimeoutError as timeout_exc:
                 e = TaskGetResultTimeout(task_id_commitment=result_task_id_commitment)
                 _logger.error(str(e))
@@ -636,11 +643,18 @@ class Crynux(object):
 
             try:
                 with fail_after(timeout):
-                    await self.task.get_task_result_checkpoint(
-                        task_id_commitment=result_task_id_commitment,
-                        checkpoint_dir=result_checkpoint,
-                        max_retries=max_retries,
-                    )
+                    async with create_task_group() as tg:
+                        # wait task success
+                        tg.start_soon(
+                            self.task.wait_task_success,
+                            result_task_id_commitment,
+                            wait_interval,
+                            max_retries,
+                        )
+                        await self.task.get_task_result_checkpoint(
+                            task_id_commitment=result_task_id_commitment,
+                            checkpoint_dir=result_checkpoint,
+                        )
             except TimeoutError as timeout_exc:
                 e = TaskGetResultTimeout(task_id_commitment=result_task_id_commitment)
                 _logger.error(str(e))

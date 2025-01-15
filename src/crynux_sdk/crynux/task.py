@@ -2,19 +2,17 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from anyio import Lock, create_task_group, sleep
-from hexbytes import HexBytes
 from tenacity import (
-    AsyncRetrying,
     retry,
     retry_if_exception,
     retry_if_not_exception_type,
     stop_after_attempt,
+    stop_never,
     wait_fixed,
 )
-from web3.logs import DISCARD
 
 from crynux_sdk import utils
 from crynux_sdk.config import TxOption
@@ -25,7 +23,6 @@ from crynux_sdk.models.contracts import (
     TaskAbortReason,
     TaskStatus,
     TaskType,
-    load_event_from_contracts,
 )
 from crynux_sdk.relay import Relay, RelayError
 
@@ -267,7 +264,9 @@ class Task(object):
         num, vrf_proof = utils.vrf_prove(
             sampling_seed, self._contracts.private_key.to_bytes()
         )
-        _logger.info(f"sampling seed: {sampling_seed.hex()}, vrf proof: {vrf_proof.hex()}, num: {num}")
+        _logger.info(
+            f"sampling seed: {sampling_seed.hex()}, vrf proof: {vrf_proof.hex()}, num: {num}"
+        )
 
         yield task_id, task_id_commitment, vrf_proof
 
@@ -661,7 +660,7 @@ class Task(object):
                 max_retries=max_retries,
             )
 
-    async def _wait_task_success(
+    async def wait_task_success(
         self, task_id_commitment: bytes, interval: int, max_retries: int = 5
     ):
         while True:
@@ -685,15 +684,14 @@ class Task(object):
         task_type: TaskType,
         count: int,
         dst_dir: Union[str, pathlib.Path],
-        max_retries: int = 5,
     ) -> List[pathlib.Path]:
         ext = "png"
         if task_type == TaskType.LLM:
             ext = "json"
 
         @retry(
-            wait=wait_fixed(2),
-            stop=stop_after_attempt(max_retries),
+            wait=wait_fixed(1),
+            stop=stop_never,
             retry=retry_if_exception(_relay_need_retry),
             reraise=True,
         )
@@ -724,14 +722,13 @@ class Task(object):
         self,
         task_id_commitment: bytes,
         checkpoint_dir: Union[str, pathlib.Path],
-        max_retries: int = 5,
     ):
         if not isinstance(checkpoint_dir, str):
             checkpoint_dir = str(checkpoint_dir)
 
         @retry(
-            wait=wait_fixed(2),
-            stop=stop_after_attempt(max_retries),
+            wait=wait_fixed(1),
+            stop=stop_never,
             retry=retry_if_exception(_relay_need_retry),
             reraise=True,
         )
@@ -784,10 +781,5 @@ class Task(object):
             task_id_commitments=task_id_commitments,
             interval=wait_interval,
             max_retries=max_retries,
-        )
-
-        # wait task success
-        await self._wait_task_success(
-            result_task_id_commitment, interval=wait_interval, max_retries=max_retries
         )
         return result_task_id_commitment
