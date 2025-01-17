@@ -8,7 +8,7 @@ import tempfile
 from functools import partial
 from typing import List, Literal, Optional, Tuple, Union
 
-from anyio import fail_after, to_thread, create_task_group
+from anyio import fail_after, move_on_after, to_thread, create_task_group
 from tenacity import (
     retry,
     AsyncRetrying,
@@ -201,10 +201,10 @@ class Crynux(object):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    async def _cancel_task(self, task_id_commitment: bytes):
+    async def _cancel_task(self, task_id_commitment: bytes, max_retries: int = 5):
         _logger.info(f"try to cancel task {task_id_commitment.hex()}")
         try:
-            await self.task.cancel_task(task_id_commitment=task_id_commitment)
+            await self.task.cancel_task(task_id_commitment=task_id_commitment, max_retries=max_retries)
             _logger.info(f"cancel task {task_id_commitment.hex()} successfully")
 
         except TxRevertedError as e:
@@ -357,9 +357,10 @@ class Crynux(object):
                     )
                     # try cancel the task
                     try:
-                        async with create_task_group() as tg:
-                            for task_id_commitment in task_id_commitments:
-                                tg.start_soon(self._cancel_task, task_id_commitment)
+                        with move_on_after(30, shield=True):
+                            async with create_task_group() as tg:
+                                for task_id_commitment in task_id_commitments:
+                                    tg.start_soon(self._cancel_task, task_id_commitment, max_retries)
                     except Exception as e:
                         raise e from timeout_exc
                     raise timeout_exc
@@ -632,9 +633,10 @@ class Crynux(object):
                     )
                     # try cancel the task
                     try:
-                        async with create_task_group() as tg:
-                            for task_id_commitment in task_id_commitments:
-                                tg.start_soon(self._cancel_task, task_id_commitment)
+                        with move_on_after(30, shield=True):
+                            async with create_task_group() as tg:
+                                for task_id_commitment in task_id_commitments:
+                                    tg.start_soon(self._cancel_task, task_id_commitment, max_retries)
                     except Exception as e:
                         raise e from timeout_exc
                     raise timeout_exc
