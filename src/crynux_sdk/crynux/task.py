@@ -94,11 +94,11 @@ class Task(object):
                 result = "none yet"
             elif retry_state.outcome.failed:
                 exception = retry_state.outcome.exception()
-                result = f"failed ({exception.__class__.__name__} {exception})"
+                result = f"failed ({exception.__class__.__name__} {str(exception)})"
             else:
                 result = f"returned {retry_state.outcome.result()}"
             
-            _logger.error(f"Create task {task_id_commitment} error: {result}")
+            _logger.error(f"Create task {task_id_commitment.hex()} error: {result}")
 
         @retry(
             wait=wait_fixed(2),
@@ -168,11 +168,11 @@ class Task(object):
                 result = "none yet"
             elif retry_state.outcome.failed:
                 exception = retry_state.outcome.exception()
-                result = f"failed ({exception.__class__.__name__} {exception})"
+                result = f"failed ({exception.__class__.__name__} {str(exception)})"
             else:
                 result = f"returned {retry_state.outcome.result()}"
             
-            _logger.error(f"Validate single task {task_id_commitment} error: {result}")
+            _logger.error(f"Validate single task {task_id_commitment.hex()} error: {result}")
 
         @retry(
             wait=wait_fixed(2),
@@ -210,11 +210,11 @@ class Task(object):
                 result = "none yet"
             elif retry_state.outcome.failed:
                 exception = retry_state.outcome.exception()
-                result = f"failed ({exception.__class__.__name__} {exception})"
+                result = f"failed ({exception.__class__.__name__} {str(exception)})"
             else:
                 result = f"returned {retry_state.outcome.result()}"
             
-            _logger.error(f"Validate task group {task_id_commitments} error: {result}")
+            _logger.error(f"Validate task group {[t.hex() for t in task_id_commitments]} error: {result}")
 
         @retry(
             wait=wait_fixed(2),
@@ -355,11 +355,11 @@ class Task(object):
                 result = "none yet"
             elif retry_state.outcome.failed:
                 exception = retry_state.outcome.exception()
-                result = f"failed ({exception.__class__.__name__} {exception})"
+                result = f"failed ({exception.__class__.__name__} {str(exception)})"
             else:
                 result = f"returned {retry_state.outcome.result()}"
             
-            _logger.error(f"Cancel task {task_id_commitment} error: {result}")
+            _logger.error(f"Cancel task {task_id_commitment.hex()} error: {result}")
 
         @retry(
             wait=wait_fixed(2),
