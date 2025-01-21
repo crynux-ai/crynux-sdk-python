@@ -12,6 +12,7 @@ from tenacity import (
     stop_after_attempt,
     stop_never,
     wait_fixed,
+    after_log
 )
 
 from crynux_sdk import utils
@@ -88,6 +89,17 @@ class Task(object):
         nonce, task_id_commitment = utils.generate_task_id_commitment(task_id)
         waiter = None
 
+        def after_log(retry_state):
+            if retry_state.outcome is None:
+                result = "none yet"
+            elif retry_state.outcome.failed:
+                exception = retry_state.outcome.exception()
+                result = f"failed ({exception.__class__.__name__} {exception})"
+            else:
+                result = f"returned {retry_state.outcome.result()}"
+            
+            _logger.error(f"Create task {task_id_commitment} error: {result}")
+
         @retry(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_retries),
@@ -151,10 +163,22 @@ class Task(object):
     ):
         waiter = None
 
+        def after_log(retry_state):
+            if retry_state.outcome is None:
+                result = "none yet"
+            elif retry_state.outcome.failed:
+                exception = retry_state.outcome.exception()
+                result = f"failed ({exception.__class__.__name__} {exception})"
+            else:
+                result = f"returned {retry_state.outcome.result()}"
+            
+            _logger.error(f"Validate single task {task_id_commitment} error: {result}")
+
         @retry(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_retries),
             retry=retry_if_not_exception_type(TxRevertedError),
+            after=after_log,
             reraise=True,
         )
         async def _inner():
@@ -181,10 +205,22 @@ class Task(object):
         assert len(task_id_commitments) == 3
         waiter = None
 
+        def after_log(retry_state):
+            if retry_state.outcome is None:
+                result = "none yet"
+            elif retry_state.outcome.failed:
+                exception = retry_state.outcome.exception()
+                result = f"failed ({exception.__class__.__name__} {exception})"
+            else:
+                result = f"returned {retry_state.outcome.result()}"
+            
+            _logger.error(f"Validate task group {task_id_commitments} error: {result}")
+
         @retry(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_retries),
             retry=retry_if_not_exception_type(TxRevertedError),
+            after=after_log,
             reraise=True,
         )
         async def _inner():
@@ -313,10 +349,23 @@ class Task(object):
                     yield task_id, task_id_commitment, vrf_proof
 
     async def cancel_task(self, task_id_commitment: bytes, max_retries: int = 5):
+        
+        def after_log(retry_state):
+            if retry_state.outcome is None:
+                result = "none yet"
+            elif retry_state.outcome.failed:
+                exception = retry_state.outcome.exception()
+                result = f"failed ({exception.__class__.__name__} {exception})"
+            else:
+                result = f"returned {retry_state.outcome.result()}"
+            
+            _logger.error(f"Cancel task {task_id_commitment} error: {result}")
+
         @retry(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_retries),
             retry=retry_if_not_exception_type(TxRevertedError),
+            after=after_log,
             reraise=True,
         )
         async def _inner():
