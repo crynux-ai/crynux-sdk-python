@@ -367,7 +367,7 @@ class Crynux(object):
                 else:
                     raise timeout_exc
             except Exception as e:
-                _logger.error(f"task {task_id_commitments} error")
+                _logger.error(f"task {[t.hex() for t in task_id_commitments]} error")
                 _logger.exception(e)
 
             assert len(result_task_id_commitment) > 0
@@ -646,7 +646,7 @@ class Crynux(object):
                 else:
                     raise timeout_exc
             except Exception as e:
-                _logger.error(f"task {task_id_commitments} error")
+                _logger.error(f"task {[t.hex() for t in task_id_commitments]} error")
                 _logger.exception(e)
 
             try:

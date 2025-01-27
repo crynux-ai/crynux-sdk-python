@@ -5,26 +5,16 @@ import pathlib
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from anyio import Lock, create_task_group, sleep
-from tenacity import (
-    retry,
-    retry_if_exception,
-    retry_if_not_exception_type,
-    stop_after_attempt,
-    stop_never,
-    wait_fixed,
-    after_log
-)
+from tenacity import (after_log, retry, retry_if_exception,
+                      retry_if_not_exception_type, stop_after_attempt,
+                      stop_never, wait_fixed)
 
 from crynux_sdk import utils
 from crynux_sdk.config import TxOption
 from crynux_sdk.contracts import Contracts, TxRevertedError
 from crynux_sdk.models import sd_args, sd_ft_lora_args
-from crynux_sdk.models.contracts import (
-    ChainTask,
-    TaskAbortReason,
-    TaskStatus,
-    TaskType,
-)
+from crynux_sdk.models.contracts import (ChainTask, TaskAbortReason,
+                                         TaskStatus, TaskType)
 from crynux_sdk.relay import Relay, RelayError
 
 from .exceptions import TaskAbortedError
@@ -89,17 +79,6 @@ class Task(object):
         nonce, task_id_commitment = utils.generate_task_id_commitment(task_id)
         waiter = None
 
-        def after_log(retry_state):
-            if retry_state.outcome is None:
-                result = "none yet"
-            elif retry_state.outcome.failed:
-                exception = retry_state.outcome.exception()
-                result = f"failed ({exception.__class__.__name__} {str(exception)})"
-            else:
-                result = f"returned {retry_state.outcome.result()}"
-            
-            _logger.error(f"Create task {task_id_commitment.hex()} error: {result}")
-
         @retry(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_retries),
@@ -108,25 +87,30 @@ class Task(object):
         )
         async def _inner():
             nonlocal waiter
-            if waiter is None:
-                waiter = await self._contracts.task_contract.create_task(
-                    task_fee=task_fee,
-                    task_type=task_type,
-                    task_id_commitment=task_id_commitment,
-                    nonce=nonce,
-                    model_ids=task_model_ids,
-                    min_vram=min_vram,
-                    required_gpu=required_gpu,
-                    required_gpu_vram=required_gpu_vram,
-                    task_version=task_version,
-                    task_size=task_size,
-                    option=self._option,
+            try:
+                if waiter is None:
+                    waiter = await self._contracts.task_contract.create_task(
+                        task_fee=task_fee,
+                        task_type=task_type,
+                        task_id_commitment=task_id_commitment,
+                        nonce=nonce,
+                        model_ids=task_model_ids,
+                        min_vram=min_vram,
+                        required_gpu=required_gpu,
+                        required_gpu_vram=required_gpu_vram,
+                        task_version=task_version,
+                        task_size=task_size,
+                        option=self._option,
+                    )
+                await waiter.wait()
+                _logger.info(
+                    f"create {str(task_type)} type task, task id commitment: {task_id_commitment.hex()}"
                 )
-            await waiter.wait()
-            _logger.info(
-                f"create {str(task_type)} type task, task id commitment: {task_id_commitment.hex()}"
-            )
-            return task_id_commitment
+                return task_id_commitment
+            except Exception as e:
+                result = f"failed ({e.__class__.__name__} {str(e)})"
+                _logger.error(f"Create task {task_id_commitment.hex()} error: {result}")
+                raise e
 
         return await _inner()
 
@@ -163,35 +147,30 @@ class Task(object):
     ):
         waiter = None
 
-        def after_log(retry_state):
-            if retry_state.outcome is None:
-                result = "none yet"
-            elif retry_state.outcome.failed:
-                exception = retry_state.outcome.exception()
-                result = f"failed ({exception.__class__.__name__} {str(exception)})"
-            else:
-                result = f"returned {retry_state.outcome.result()}"
-            
-            _logger.error(f"Validate single task {task_id_commitment.hex()} error: {result}")
-
         @retry(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_retries),
             retry=retry_if_not_exception_type(TxRevertedError),
-            after=after_log,
             reraise=True,
         )
         async def _inner():
             nonlocal waiter
-            if waiter is None:
-                waiter = await self._contracts.task_contract.validate_single_task(
-                    task_id_commitment=task_id_commitment,
-                    vrf_proof=vrf_proof,
-                    public_key=self._contracts.public_key.to_bytes(),
-                    option=self._option,
+            try:
+                if waiter is None:
+                    waiter = await self._contracts.task_contract.validate_single_task(
+                        task_id_commitment=task_id_commitment,
+                        vrf_proof=vrf_proof,
+                        public_key=self._contracts.public_key.to_bytes(),
+                        option=self._option,
+                    )
+                await waiter.wait()
+                _logger.info(f"validate single task {task_id_commitment.hex()}")
+            except Exception as e:
+                result = f"failed ({e.__class__.__name__} {str(e)})"
+                _logger.error(
+                    f"Validate single task {task_id_commitment.hex()} error: {result}"
                 )
-            await waiter.wait()
-            _logger.info(f"validate single task {task_id_commitment.hex()}")
+                raise e
 
         return await _inner()
 
@@ -205,40 +184,35 @@ class Task(object):
         assert len(task_id_commitments) == 3
         waiter = None
 
-        def after_log(retry_state):
-            if retry_state.outcome is None:
-                result = "none yet"
-            elif retry_state.outcome.failed:
-                exception = retry_state.outcome.exception()
-                result = f"failed ({exception.__class__.__name__} {str(exception)})"
-            else:
-                result = f"returned {retry_state.outcome.result()}"
-            
-            _logger.error(f"Validate task group {[t.hex() for t in task_id_commitments]} error: {result}")
-
         @retry(
             wait=wait_fixed(2),
             stop=stop_after_attempt(max_retries),
             retry=retry_if_not_exception_type(TxRevertedError),
-            after=after_log,
             reraise=True,
         )
         async def _inner():
             nonlocal waiter
-            if waiter is None:
-                waiter = await self._contracts.task_contract.validate_task_group(
-                    task_id_commitment1=task_id_commitments[0],
-                    task_id_commitment2=task_id_commitments[1],
-                    task_id_commitment3=task_id_commitments[2],
-                    task_id=task_id,
-                    vrf_proof=vrf_proof,
-                    public_key=self._contracts.public_key.to_bytes(),
-                    option=self._option,
+            try:
+                if waiter is None:
+                    waiter = await self._contracts.task_contract.validate_task_group(
+                        task_id_commitment1=task_id_commitments[0],
+                        task_id_commitment2=task_id_commitments[1],
+                        task_id_commitment3=task_id_commitments[2],
+                        task_id=task_id,
+                        vrf_proof=vrf_proof,
+                        public_key=self._contracts.public_key.to_bytes(),
+                        option=self._option,
+                    )
+                await waiter.wait()
+                _logger.info(
+                    f"validate task group {[commitment.hex() for commitment in task_id_commitments]}"
                 )
-            await waiter.wait()
-            _logger.info(
-                f"validate task group {[commitment.hex() for commitment in task_id_commitments]}"
-            )
+            except Exception as e:
+                result = f"failed ({e.__class__.__name__} {str(e)})"
+                _logger.error(
+                    f"Validate task group {[t.hex() for t in task_id_commitments]} error: {result}"
+                )
+                raise e
 
         return await _inner()
 
@@ -349,7 +323,7 @@ class Task(object):
                     yield task_id, task_id_commitment, vrf_proof
 
     async def cancel_task(self, task_id_commitment: bytes, max_retries: int = 5):
-        
+
         def after_log(retry_state):
             if retry_state.outcome is None:
                 result = "none yet"
@@ -358,7 +332,7 @@ class Task(object):
                 result = f"failed ({exception.__class__.__name__} {str(exception)})"
             else:
                 result = f"returned {retry_state.outcome.result()}"
-            
+
             _logger.error(f"Cancel task {task_id_commitment.hex()} error: {result}")
 
         @retry(
