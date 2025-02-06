@@ -17,6 +17,7 @@ dependencies = [
     "tenacity~=8.2.3",
     "importlib_resources",
     "eth-rlp<2.0.0",
+    "limiter==0.1.2",
     "httpx"
 ]
 version = "2.5.0"

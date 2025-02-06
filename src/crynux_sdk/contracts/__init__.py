@@ -8,7 +8,7 @@ from eth_typing import ChecksumAddress
 from hexbytes import HexBytes
 from web3.logs import WARN
 from web3.providers.async_base import AsyncBaseProvider
-from web3.types import TxParams, TxReceipt, BlockIdentifier, BlockData
+from web3.types import BlockData, BlockIdentifier, TxParams, TxReceipt
 
 from crynux_sdk.config import TxOption
 
@@ -50,6 +50,7 @@ class Contracts(object):
         provider_path: Optional[str] = None,
         pool_size: int = 5,
         timeout: int = 10,
+        rps: int = 10
     ):
         if provider is not None:
             pool_size = 1
@@ -60,6 +61,7 @@ class Contracts(object):
             provider_path=provider_path,
             pool_size=pool_size,
             timeout=timeout,
+            rps=rps,
         )
 
         self._initialized = False
