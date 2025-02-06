@@ -90,6 +90,7 @@ class Crynux(object):
         max_fee_per_gas: Optional[int] = None,
         max_priority_fee_per_gas: Optional[int] = None,
         contracts_timeout: int = 30,
+        contracts_rps: int = 10,
         relay_timeout: float = 30,
         contracts: Optional[Contracts] = None,
         relay: Optional[Relay] = None,
@@ -125,6 +126,7 @@ class Crynux(object):
                 provider_path=chain_provider_path,
                 privkey=privkey,
                 timeout=contracts_timeout,
+                rps=contracts_rps,
             )
 
         default_contract_config = get_default_contract_config()
